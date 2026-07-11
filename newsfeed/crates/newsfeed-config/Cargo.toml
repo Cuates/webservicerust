@@ -1,0 +1,11 @@
+[package]
+name    = "newsfeed-config"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+newsfeed-constants = { path = "../newsfeed-constants" }
+serde              = { workspace = true }
+envy.workspace     = true
+dotenvy.workspace  = true
+thiserror.workspace = true

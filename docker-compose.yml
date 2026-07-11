@@ -1,0 +1,32 @@
+services:
+  newsfeed-server:
+    build:
+      context: .
+      dockerfile: newsfeed/docker/Dockerfile
+      args:
+        TIMEZONE_LOCATION: ${TIMEZONE_LOCATION:-America/Los_Angeles}
+    image: newsfeed-server:latest
+    container_name: newsfeed-server
+    restart: unless-stopped
+    # Port binding:
+    #   127.0.0.1 → localhost only; safe default for Postman/VSCode REST testing.
+    #   NPM reaches this service via the newsfeed-net Docker network (no host port needed for NPM).
+    #   Change to "0.0.0.0:${APP_PORT:-4815}:4815" if you need LAN access.
+    ports:
+      - "127.0.0.1:${APP_PORT:-4815}:4815"
+    env_file: .env
+    networks:
+      - newsfeed-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4815/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  newsfeed-net:
+    driver: bridge
+    # To attach to NPM's existing external network, replace the above with:
+    # external: true
+    # name: <npm-docker-network-name>

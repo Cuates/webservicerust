@@ -1,0 +1,21 @@
+# Exclude everything by default, then allow only what is needed
+**
+
+# Allow workspace manifests
+!Cargo.toml
+!Cargo.lock
+
+# Allow newsfeed crate sources
+!newsfeed/
+newsfeed/**
+!newsfeed/crates/
+newsfeed/crates/**
+!newsfeed/crates/*/
+!newsfeed/crates/*/Cargo.toml
+!newsfeed/crates/*/src/
+!newsfeed/crates/*/src/**
+!newsfeed/docker/
+!newsfeed/docker/Dockerfile
+
+# Exclude Rust build artifacts (never send to Docker)
+target/

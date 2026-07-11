@@ -1,0 +1,13 @@
+[package]
+name    = "newsfeed-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+newsfeed-constants = { path = "../newsfeed-constants" }
+newsfeed-models    = { path = "../newsfeed-models" }
+newsfeed-db        = { path = "../newsfeed-db" }
+
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }

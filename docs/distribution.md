@@ -1,0 +1,49 @@
+# Distribution & Deployment
+
+This project uses Docker to create a secure, minimal, and highly optimized container for distribution.
+
+## Multi-stage Dockerfile
+
+The `Dockerfile` inside `newsfeed/docker/` uses a multi-stage approach to separate the build environment from the runtime environment.
+
+### Stage 1: Builder
+- **Base Image**: `rust:1.85-slim-bookworm`
+- **Purpose**: Compiles the Rust application and its dependencies into a statically linked release binary.
+- **Process**: Uses the workspace manifest to build the `newsfeed-server` binary with `--release`.
+
+### Stage 2: Runtime
+- **Base Image**: `debian:bookworm-slim`
+- **Purpose**: A minimal environment containing only what is necessary to run the binary (such as SSL root certificates for database TLS connections).
+- **Security**: The image creates and uses a non-root user (`newsfeed`) to run the application securely.
+
+## Building the Container
+
+You can build the Docker container manually or use `docker-compose`. 
+
+### Using Docker Compose
+
+The simplest way to build and run the application locally in an isolated network is using Docker Compose:
+
+```bash
+docker compose up --build -d
+```
+This will mount the `.env` file automatically and map port `4815` to your host machine.
+
+### Manual Docker Build
+
+If you are building the image for a registry or remote deployment, run the build from the project root:
+
+```bash
+docker build -t newsfeed-service:latest -f newsfeed/docker/Dockerfile .
+```
+
+To run the standalone container with your `.env` file:
+
+```bash
+docker run -p 4815:4815 --env-file .env newsfeed-service:latest
+```
+
+## Production Considerations
+
+- **Reverse Proxy**: While Axum is robust, it's generally recommended to place a reverse proxy (like Nginx, Traefik, or an AWS Application Load Balancer) in front of the container for SSL termination and distributed DDoS protection.
+- **Environment Variables**: In production, do not mount the `.env` file. Instead, inject the environment variables natively through your orchestration platform (e.g., Kubernetes ConfigMaps/Secrets, AWS ECS Task Definitions, or Docker Swarm Secrets).

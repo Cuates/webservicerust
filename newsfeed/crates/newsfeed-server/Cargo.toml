@@ -1,0 +1,31 @@
+[package]
+name    = "newsfeed-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "newsfeed-server"
+path = "src/main.rs"
+
+[dependencies]
+newsfeed-constants = { path = "../newsfeed-constants" }
+newsfeed-config    = { path = "../newsfeed-config" }
+newsfeed-models    = { path = "../newsfeed-models" }
+newsfeed-db        = { path = "../newsfeed-db" }
+newsfeed-service   = { path = "../newsfeed-service" }
+
+axum               = { workspace = true }
+tokio              = { workspace = true }
+tower              = { workspace = true }
+tower-http         = { workspace = true }
+tower_governor     = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender   = { workspace = true }
+dotenvy            = { workspace = true }
+envy               = { workspace = true }
+thiserror          = { workspace = true }
+anyhow             = { workspace = true }
+url                = { version = "2" }

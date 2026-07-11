@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "newsfeed/crates/newsfeed-constants",
+    "newsfeed/crates/newsfeed-config",
+    "newsfeed/crates/newsfeed-models",
+    "newsfeed/crates/newsfeed-db",
+    "newsfeed/crates/newsfeed-service",
+    "newsfeed/crates/newsfeed-server",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+authors  = ["Cuates"]
+license  = "MIT"
+
+[workspace.dependencies]
+# Web framework
+axum           = { version = "0.8",  features = ["macros"] }
+tokio          = { version = "1",    features = ["full"] }
+tower          = { version = "0.5" }
+tower-http     = { version = "0.6",  features = ["cors", "trace", "request-id"] }
+tower_governor = { version = "0.8" }
+
+# Database
+sqlx       = { version = "0.8", features = [
+    "runtime-tokio",
+    "postgres",
+    "mysql",
+    "tls-rustls",
+    "macros",
+] }
+tiberius   = { version = "0.12", default-features = false, features = ["tokio", "native-tls"] }
+tokio-util = { version = "0.7",  features = ["compat"] }
+
+# Serialization
+serde      = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+
+# Observability
+tracing            = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender   = { version = "0.2" }
+
+# Config / env
+dotenvy = { version = "0.15" }
+envy    = { version = "0.4" }
+
+# Error handling
+thiserror = { version = "2" }
+anyhow    = { version = "1" }
+
+# Utilities
+regex     = { version = "1" }
+once_cell = { version = "1" }

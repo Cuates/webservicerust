@@ -1,0 +1,9 @@
+[package]
+name    = "newsfeed-models"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+sqlx       = { workspace = true }
