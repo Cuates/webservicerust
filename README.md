@@ -1,6 +1,6 @@
 # Newsfeed Web Service
 
-[![GitHub Version](https://img.shields.io/github/v/tag/cuates/webservicerust?label=version&sort=semver)](https://github.com/cuates/webservicerust/releases)
+[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cuates/webservicerust/ci.yml?branch=main)](https://github.com/cuates/webservicerust/actions)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-black?logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.8-red)](https://github.com/tokio-rs/axum)
