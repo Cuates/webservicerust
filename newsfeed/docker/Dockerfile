@@ -10,7 +10,7 @@
 # =============================================================================
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:1.97-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -18,6 +18,7 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace manifests first so Cargo can fetch dependencies in a
@@ -41,7 +42,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         tzdata \
         ca-certificates \
-        curl \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*

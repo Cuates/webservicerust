@@ -4,10 +4,10 @@
 //! executors.  All database I/O is contained in this crate.
 
 pub mod error;
-pub mod pool;
-pub mod postgres;
 pub mod mariadb;
 pub mod mssql;
+pub mod pool;
+pub mod postgres;
 
 pub use error::DbError;
 pub use pool::{AppState, DbPool};

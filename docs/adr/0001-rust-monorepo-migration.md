@@ -24,3 +24,6 @@ Specifically, we decided to:
 - **Positive**: High performance, predictable memory usage, and minimal Docker container size (< 100MB).
 - **Negative**: Increased complexity in the build system and learning curve for maintainers used to Python.
 - **Negative**: Dual database driver approach (`sqlx` + `tiberius`) requires slightly more complex trait abstraction and state management.
+
+## Update (2026-07-12)
+The monorepo architecture has successfully reached its 1.0.0 stable milestone. All legacy Python scripts, `Makefile`s, and ad-hoc powershell scripts have been entirely removed in favor of native cross-platform Rust build tooling (`cargo-make`) and strict JSON HTTP extractors.

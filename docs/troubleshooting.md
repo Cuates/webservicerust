@@ -38,7 +38,19 @@ The service enforces strict configuration validation at startup. If it fails to 
   - Increase this threshold by setting `RATE_LIMIT_RPS` and `RATE_LIMIT_BURST` to higher values in your `.env` file.
   - Note: If deploying behind a load balancer without proper IP forwarding (`X-Forwarded-For`), the load balancer's IP might trigger the limit for all users. Ensure your load balancer preserves the original client IP.
 
-## 5. Docker Build Failures
+## 5. API Returns `415 Unsupported Media Type` or `400 Bad Request`
+
+- **Issue**: You send a payload and receive a JSON error mentioning "Unsupported Media Type" or syntax errors.
+- **Solution**: 
+  - Ensure you are sending the `Content-Type: application/json` header.
+  - Verify your JSON payload is perfectly formatted. Our custom `AppJson` extractor intentionally masks raw stack traces and instead returns standardized `{ "error": "message" }` blocks to prevent data leaks.
+
+## 6. API Returns CORS Errors (or Missing Headers)
+
+- **Issue**: The browser blocks the request, or a preflight `OPTIONS` request returns a `200 OK` but lacks `Access-Control-Allow-Origin` headers.
+- **Solution**: The `tower_http::cors::CorsLayer` aggressively drops CORS headers if the incoming `Origin` header does not match the configured whitelist, deliberately failing the browser check. Verify the client's Origin matches the allowed list in `newsfeed-server/src/router.rs`.
+
+## 7. Docker Build Failures
 
 - **Issue**: `cargo build` succeeds locally but the `docker build` fails.
 - **Solution**: Ensure your `.dockerignore` file correctly excludes the `target/` directory and any local `.env` files. Passing a massive local `target/` directory to the Docker build context can cause memory exhaustion and out-of-space errors on the Docker daemon.

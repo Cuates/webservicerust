@@ -1,15 +1,22 @@
 //! Standard API response envelope used across all endpoints.
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Generic API response envelope matching the Python reference format.
 ///
 /// All endpoints return this structure.  Field names use PascalCase in JSON
 /// to maintain compatibility with existing clients.
-#[derive(Debug, Serialize)]
+///
+/// The `Code` field provides a machine-readable error/success code for clients
+/// that need to distinguish error types programmatically.
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T: Serialize> {
     #[serde(rename = "Status")]
     pub status: String,
+
+    #[serde(rename = "Code")]
+    pub code: String,
 
     #[serde(rename = "Message")]
     pub message: String,
@@ -26,22 +33,39 @@ impl<T: Serialize> ApiResponse<T> {
     pub fn success(message: impl Into<String>, result: Vec<T>) -> Self {
         let count = result.len();
         Self {
-            status:  "Success".to_owned(),
+            status: "Success".to_owned(),
+            code: "OK".to_owned(),
             message: message.into(),
             count,
             result,
         }
     }
-}
 
-impl ApiResponse<serde_json::Value> {
     /// Construct an error response with an empty result list.
-    pub fn error(message: impl Into<String>) -> Self {
-        Self {
-            status:  "Error".to_owned(),
+    ///
+    /// Works for any `T: Serialize`, eliminating the need to specify
+    /// `ApiResponse::<serde_json::Value>::error(...)` at every call site.
+    pub fn error(message: impl Into<String>) -> ApiResponse<serde_json::Value> {
+        ApiResponse {
+            status: "Error".to_owned(),
+            code: "ERROR".to_owned(),
             message: message.into(),
-            count:   0,
-            result:  vec![],
+            count: 0,
+            result: vec![],
+        }
+    }
+
+    /// Construct an error response with a specific machine-readable code.
+    pub fn error_with_code(
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> ApiResponse<serde_json::Value> {
+        ApiResponse {
+            status: "Error".to_owned(),
+            code: code.into(),
+            message: message.into(),
+            count: 0,
+            result: vec![],
         }
     }
 }

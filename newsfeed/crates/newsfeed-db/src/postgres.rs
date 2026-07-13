@@ -25,13 +25,13 @@ pub async fn extract_feed(
 ) -> Result<Vec<NewsFeedRow>, DbError> {
     let rows = sqlx::query_as::<_, NewsFeedRow>(
         "SELECT titlereturn, imageurlreturn, feedurlreturn, actualurlreturn, publishdatereturn \
-         FROM extractnewsfeed($1, $2, $3, $4, $5, $6, $7)"
+         FROM extractnewsfeed($1, $2, $3, $4, $5, $6, $7)",
     )
-    .bind(OptionMode::EXTRACT_FEED)
+    .bind(OptionMode::ExtractFeed.as_str())
     .bind(params.title.as_deref())
-    .bind(params.imageurl.as_deref())
-    .bind(params.feedurl.as_deref())
-    .bind(params.actualurl.as_deref())
+    .bind(params.image_url.as_deref())
+    .bind(params.feed_url.as_deref())
+    .bind(params.actual_url.as_deref())
     .bind(params.limit.as_deref())
     .bind(params.sort.as_deref())
     .fetch_all(pool)
@@ -47,33 +47,35 @@ pub async fn extract_feed(
 #[instrument(skip(pool), level = "debug")]
 pub async fn cud_feed(
     pool: &PgPool,
-    option_mode: &str,
+    option_mode: OptionMode,
     params: &CudParams,
 ) -> Result<Vec<Value>, DbError> {
     // PostgreSQL CALL returns a result set with a single `status` JSON column.
-    let rows: Vec<(Option<String>,)> = sqlx::query_as(
-        "CALL insertupdatedeletenewsfeed($1, $2, $3, $4, $5, $6)"
-    )
-    .bind(option_mode)
-    .bind(params.title.as_deref())
-    .bind(params.imageurl.as_deref())
-    .bind(params.feedurl.as_deref())
-    .bind(params.actualurl.as_deref())
-    .bind(params.publishdate.as_deref())
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Option<String>,)> =
+        sqlx::query_as("CALL insertupdatedeletenewsfeed($1, $2, $3, $4, $5, $6)")
+            .bind(option_mode.as_str())
+            .bind(params.title.as_deref())
+            .bind(params.image_url.as_deref())
+            .bind(params.feed_url.as_deref())
+            .bind(params.actual_url.as_deref())
+            .bind(params.publish_date.as_deref())
+            .fetch_all(pool)
+            .await?;
 
     parse_status_rows(rows)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Parse the status column rows returned by the stored procedure.
+///
+/// A `NULL` status column indicates the procedure produced no usable output —
+/// propagated as `DbError::EmptyResult` so the handler returns a 5xx rather
+/// than a misleading `200 OK` with an error body.
 fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError> {
     let mut results = Vec::with_capacity(rows.len());
     for (status_json,) in rows {
-        let json_str = status_json.unwrap_or_else(|| {
-            r#"{"Status":"Error","Message":"Missing status from procedure"}"#.to_owned()
-        });
+        let json_str = status_json.ok_or(DbError::EmptyResult)?;
         let parsed: Value = serde_json::from_str(&json_str)?;
         results.push(parsed);
     }

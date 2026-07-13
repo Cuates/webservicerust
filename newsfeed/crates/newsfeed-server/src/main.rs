@@ -7,11 +7,9 @@
 //! 4. Build `AppState`: DB pool + API key `HashSet`
 //! 5. Build the Axum router with the full middleware stack
 //! 6. Bind and serve with graceful shutdown on SIGTERM / SIGINT
+//! 7. Drop `AppState` to close DB pool connections cleanly
 
-mod router;
-mod middleware;
-mod handlers;
-
+use newsfeed_server::router;
 use std::sync::Arc;
 
 use newsfeed_config::{AppConfig, DatabaseConfig};
@@ -21,6 +19,30 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 #[tokio::main]
 async fn main() {
+    // ── 0. Internal Health Check ─────────────────────────────────────────────
+    if std::env::args().any(|a| a == "--health-check") {
+        let port = std::env::var("APP_PORT").unwrap_or_else(|_| "4815".to_string());
+        use std::io::{Read, Write};
+        let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+            std::process::exit(1);
+        };
+        if stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .is_err()
+        {
+            std::process::exit(1);
+        }
+        let mut response = String::new();
+        if stream.read_to_string(&mut response).is_err() {
+            std::process::exit(1);
+        }
+        if response.contains("200 OK") {
+            std::process::exit(0);
+        } else {
+            std::process::exit(1);
+        }
+    }
+
     // ── 1. Load .env ─────────────────────────────────────────────────────────
     dotenvy::dotenv().ok();
 
@@ -37,6 +59,7 @@ async fn main() {
         port  = app_cfg.app_port,
         host  = %app_cfg.bind_host,
         db    = %db_cfg.database_target,
+        batch_concurrency_limit = app_cfg.batch_concurrency_limit,
         "Starting newsfeed-server"
     );
 
@@ -44,7 +67,7 @@ async fn main() {
     let state = Arc::new(
         AppState::init(&app_cfg, &db_cfg)
             .await
-            .expect("Failed to initialise database pool"),
+            .expect("Failed to initialise application state"),
     );
 
     // ── 5. Build router ───────────────────────────────────────────────────────
@@ -58,19 +81,26 @@ async fn main() {
 
     tracing::info!("Listening on {addr}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("Server error");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("Server error");
+
+    // ── 7. Drain DB pools ─────────────────────────────────────────────────────
+    // Dropping state signals sqlx/bb8 to close all pooled connections cleanly,
+    // so the database server sees normal disconnects rather than TCP resets.
+    drop(state);
+    tracing::info!("Database pools closed. Shutdown complete.");
 }
 
 // ── Tracing initialisation ────────────────────────────────────────────────────
 
 fn init_tracing(rust_log: &str) {
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new(rust_log)
-        }))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(rust_log)))
         .with(tracing_subscriber::fmt::layer())
         .init();
 }
@@ -81,7 +111,9 @@ async fn shutdown_signal() {
     use tokio::signal;
 
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]

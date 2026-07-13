@@ -5,7 +5,5 @@
 pub mod feed;
 pub mod response;
 
-pub use feed::{
-    ExtractParams, CudParams, NewsFeedRow, CudRow,
-};
+pub use feed::{CudParams, ExtractParams, NewsFeedRow};
 pub use response::ApiResponse;

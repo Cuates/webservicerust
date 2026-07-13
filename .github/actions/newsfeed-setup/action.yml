@@ -1,0 +1,26 @@
+name: "Setup Newsfeed CI"
+description: "Sets up Rust toolchain, caching, and sqlx-cli for the Newsfeed API"
+
+inputs:
+  rust-version:
+    description: "Rust toolchain version to install"
+    required: false
+    default: "stable"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ inputs.rust-version }}
+        components: clippy, rustfmt
+
+    - name: Cache Cargo Registry and Build
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "newsfeed-ci"
+
+    - name: Install sqlx-cli
+      shell: bash
+      run: cargo install sqlx-cli --no-default-features --features native-tls,postgres,mysql,sqlite

@@ -1,0 +1,144 @@
+[config]
+skip_core_tasks = true
+default_to_workspace = false
+
+[env]
+CARGO_MAKE_WORKSPACE_SKIP_MEMBERS = true
+
+[tasks.help]
+workspace = false
+description = "List all available tasks."
+command = "cargo"
+args = ["make", "--list-all-steps"]
+
+[tasks.build]
+workspace = false
+description = "Build release binary (--locked)"
+command = "cargo"
+args = ["build", "--release", "--locked"]
+
+[tasks.build-dev]
+workspace = false
+description = "Build debug binary"
+command = "cargo"
+args = ["build"]
+
+[tasks.check]
+workspace = false
+description = "Run cargo check all crates"
+command = "cargo"
+args = ["check", "--workspace"]
+
+[tasks.check-deadcode]
+workspace = false
+description = "Run cargo clippy to deny dead code across all crates"
+command = "cargo"
+args = ["clippy", "--workspace", "--", "-D", "dead_code"]
+
+[tasks.clean]
+workspace = false
+description = "Run cargo clean build artifacts"
+command = "cargo"
+args = ["clean"]
+
+[tasks.fix]
+workspace = false
+description = "Format code and automatically fix clippy warnings"
+script_runner = "@duckscript"
+script = '''
+exec cargo fmt --all
+exec cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings
+'''
+
+[tasks.info]
+workspace = false
+description = "Print formatted environment and project information"
+script_runner = "@duckscript"
+script = '''
+out = exec rustc --version
+rustc_version = trim ${out.stdout}
+
+out = exec cargo --version
+cargo_version = trim ${out.stdout}
+
+out = exec rustup show active-toolchain
+toolchain = trim ${out.stdout}
+
+echo " "
+echo "[✔] Environment"
+echo "    - OS: ${CARGO_MAKE_RUST_TARGET_OS} ${CARGO_MAKE_RUST_TARGET_ENV} (${CARGO_MAKE_RUST_TARGET_ARCH})"
+echo "    ✔ rustc: ${rustc_version}"
+echo "    ✔ cargo: ${cargo_version}"
+echo "    ✔ Rust toolchain: ${toolchain}"
+echo " "
+echo "[-] Workspace Packages"
+exec cargo tree --depth 0 --workspace
+echo " "
+'''
+
+[tasks.audit]
+workspace = false
+description = "Run cargo audit for vulnerabilities"
+command = "cargo"
+args = ["audit", "--ignore", "RUSTSEC-2023-0071", "--ignore", "RUSTSEC-2026-0097"]
+
+[tasks.test]
+workspace = false
+description = "Run all workspace tests"
+command = "cargo"
+args = ["test", "--workspace"]
+
+[tasks.test-coverage]
+workspace = false
+description = "Run tests and generate lcov.info coverage report"
+command = "cargo"
+args = ["llvm-cov", "--workspace", "--all-features", "--lcov", "--output-path", "lcov.info"]
+
+[tasks.docker-build]
+workspace = false
+description = "Build Docker image"
+command = "docker"
+args = ["compose", "build"]
+
+[tasks.docker-up]
+workspace = false
+description = "Start containers (detached)"
+command = "docker"
+args = ["compose", "up", "-d"]
+
+[tasks.docker-down]
+workspace = false
+description = "Stop containers"
+command = "docker"
+args = ["compose", "down"]
+
+[tasks.docker-restart]
+workspace = false
+description = "Restart containers"
+script_runner = "@duckscript"
+script = '''
+exec docker compose down
+exec docker compose up -d
+'''
+
+[tasks.docker-logs]
+workspace = false
+description = "Follow container logs"
+command = "docker"
+args = ["compose", "logs", "-f", "newsfeed-server"]
+
+[tasks.key-gen]
+workspace = false
+description = "Generate a new API key"
+script_runner = "@duckscript"
+script = '''
+exec bash scripts/generate-api-key.sh
+'''
+
+[tasks.key-revoke]
+workspace = false
+description = "Revoke an existing API key"
+script_runner = "@duckscript"
+script = '''
+exec bash scripts/revoke-api-key.sh
+'''

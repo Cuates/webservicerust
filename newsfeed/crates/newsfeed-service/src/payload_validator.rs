@@ -10,40 +10,50 @@ use crate::error::ServiceError;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Validate that `Content-Type` and `Accept` headers match expected values.
+/// Validate request headers against expected values.
 ///
-/// Mirrors the Python `check_headers()` logic exactly.
-pub fn validate_headers(headers: &HashMap<String, String>) -> Result<(), ServiceError> {
+/// `requires_body` — when `true` (POST / PUT / DELETE), enforces the presence
+/// of `Content-Type: application/json; charset=utf-8`.  When `false` (GET /
+/// QUERY), only the `Accept` header is checked, since bodyless requests do not
+/// carry a `Content-Type` by RFC convention.
+pub fn validate_headers(
+    headers: &HashMap<String, String>,
+    requires_body: bool,
+) -> Result<(), ServiceError> {
     let accept = headers
         .get(HeaderType::ACCEPT)
         .map(|s| s.to_lowercase())
         .unwrap_or_default();
 
-    let raw_ct = headers
-        .get(HeaderType::CONTENT_TYPE)
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
-
-    // Split "application/json; charset=utf-8" into content-type and charset parts.
-    let mut parts = raw_ct.splitn(2, ';');
-    let content_type = parts.next().unwrap_or("").trim().to_owned();
-    let charset = parts
-        .next()
-        .and_then(|p| p.split('=').nth(1))
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_default();
-
     if accept != PossibleHeaderType::ACCEPT {
         return Err(ServiceError::InvalidHeader("HTTP accept invalid".into()));
     }
-    if content_type != PossibleHeaderType::CONTENT_TYPE {
-        return Err(ServiceError::InvalidHeader("Content type invalid".into()));
+
+    if requires_body {
+        let raw_ct = headers
+            .get(HeaderType::CONTENT_TYPE)
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        // Split "application/json; charset=utf-8" into content-type and charset parts.
+        let mut parts = raw_ct.splitn(2, ';');
+        let content_type = parts.next().unwrap_or("").trim().to_owned();
+        let charset = parts
+            .next()
+            .and_then(|p| p.split('=').nth(1))
+            .map(|s| s.trim().to_owned())
+            .unwrap_or_default();
+
+        if content_type != PossibleHeaderType::CONTENT_TYPE {
+            return Err(ServiceError::InvalidHeader("Content type invalid".into()));
+        }
+        if charset != PossibleHeaderType::CHARSET {
+            return Err(ServiceError::InvalidHeader(
+                "Content-Type charset invalid".into(),
+            ));
+        }
     }
-    if charset != PossibleHeaderType::CHARSET {
-        return Err(ServiceError::InvalidHeader(
-            "Content-Type charset invalid".into(),
-        ));
-    }
+
     Ok(())
 }
 
@@ -63,12 +73,8 @@ pub enum ValidatedPayload {
 pub fn validate_get_params(
     raw: &HashMap<String, String>,
 ) -> Result<ValidatedPayload, ServiceError> {
-    // Normalise all keys to lowercase.
-    let normalised: HashMap<String, String> = raw
-        .iter()
-        .map(|(k, v)| (k.to_lowercase(), v.clone()))
-        .collect();
-    Ok(ValidatedPayload::QueryParams(normalised))
+    // Keys are expected to match ExtractParams field names exactly (snake_case).
+    Ok(ValidatedPayload::QueryParams(raw.clone()))
 }
 
 /// Validate POST / PUT / DELETE JSON body.
@@ -112,29 +118,11 @@ pub fn validate_payload(
             }
         }
 
-        // Deserialise the item into `CudParams` with lowercase key normalisation.
-        let normalised = normalise_object(item);
-        let params: CudParams = serde_json::from_value(normalised).map_err(|e| {
+        let params: CudParams = serde_json::from_value(item.clone()).map_err(|e| {
             ServiceError::InvalidPayload(format!("Failed to parse payload item: {e}"))
         })?;
         validated.push(params);
     }
 
     Ok(ValidatedPayload::BodyItems(validated))
-}
-
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-/// Return a copy of a JSON object with all keys lowercased.
-fn normalise_object(value: &serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(map) => {
-            let lower: serde_json::Map<String, serde_json::Value> = map
-                .iter()
-                .map(|(k, v)| (k.to_lowercase(), v.clone()))
-                .collect();
-            serde_json::Value::Object(lower)
-        }
-        other => other.clone(),
-    }
 }

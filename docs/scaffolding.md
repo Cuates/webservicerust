@@ -43,14 +43,14 @@ You can view or revoke active keys securely using the `revoke-api-key` script in
 
 ## 4. Building and Running Locally
 
-To build and test the workspace locally without Docker:
+To build and test the workspace locally without Docker, we use `cargo-make` shortcuts:
 
 ```bash
 # Check compilation across all workspace crates
-cargo check --workspace
+cargo make check
 
 # Run the server binary directly
-cargo run --bin newsfeed-server
+cargo make run
 ```
 
 When running natively, ensure the `.env` file is in the current working directory, as the application uses `dotenvy` to load it dynamically.

@@ -5,11 +5,11 @@ Welcome to the Newsfeed Web Service project. If you are an AI agent analyzing th
 ## Project Context
 - **Domain**: This is a core backend service that manages CRUD operations for user newsfeeds.
 - **Tech Stack**: Rust (Axum, Tokio), Cargo Workspace, `sqlx` (Postgres, MariaDB), `tiberius` (MSSQL).
-- **History**: This service was completely rewritten from a legacy Python (FastAPI) monolith into a statically-typed Rust monorepo.
+- **History**: This service was completely rewritten from a legacy Python (FastAPI) monolith into a statically-typed Rust monorepo, and has reached its stable `1.0.0` milestone.
 
 ## Rules of Engagement
 - **No Monoliths**: Do not combine crates. Maintain the strict separation of concerns outlined in `docs/architecture.md`.
-- **Compile First**: Before making assertions about code correctness, ensure `cargo check --workspace` passes.
+- **Compile First**: Before making assertions about code correctness, ensure `cargo make check` passes.
 - **Configuration**: Any new configuration variables MUST be added to `newsfeed-config` and validated at startup via `envy`. DO NOT use `std::env::var` dynamically in request paths.
 - **Security**: Hardcoded secrets are strictly forbidden. API keys are managed securely in `.env` and loaded into an `AppState` `HashSet`.
 

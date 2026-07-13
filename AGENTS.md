@@ -7,7 +7,7 @@ These rules apply universally to any AI agent operating within the `webserviceru
 - **Destructive Actions**: Always ask for explicit permission before running destructive SQL queries or deleting structural directories.
 
 ## 2. Compilation is King
-- If you modify Rust code, you MUST run `cargo check --workspace` to verify your changes. Do not assume your code compiles.
+- If you modify Rust code, you MUST run `cargo make check` to verify your changes. Do not assume your code compiles.
 - Fix all warnings (e.g., unused imports) before completing a task to maintain a clean CI pipeline.
 
 ## 3. Documentation Sync

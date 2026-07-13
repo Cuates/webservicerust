@@ -4,13 +4,14 @@
 /// Application configuration loaded from environment variables.
 ///
 /// Required env vars (no defaults for security-sensitive fields):
-/// - `BIND_HOST`          — TCP listener host address
-/// - `APP_PORT`           — TCP listener port
-/// - `RUST_LOG`           — tracing log level filter
-/// - `API_KEYS`           — comma-separated list of valid API keys
-/// - `ALLOWED_ORIGINS`    — comma-separated list of allowed CORS origins
-/// - `RATE_LIMIT_RPS`     — token-bucket replenish rate (requests/sec per IP)
-/// - `RATE_LIMIT_BURST`   — token-bucket burst capacity
+/// - `BIND_HOST`                — TCP listener host address
+/// - `APP_PORT`                 — TCP listener port
+/// - `RUST_LOG`                 — tracing log level filter
+/// - `API_KEYS`                 — comma-separated list of valid API keys
+/// - `ALLOWED_ORIGINS`          — comma-separated list of allowed CORS origins
+/// - `RATE_LIMIT_RPS`           — token-bucket replenish rate (requests/sec per IP)
+/// - `RATE_LIMIT_BURST`         — token-bucket burst capacity
+/// - `BATCH_CONCURRENCY_LIMIT`  — max parallel DB futures per batch CUD request (default: 5)
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct AppConfig {
     /// TCP bind address (e.g. `127.0.0.1` or `0.0.0.0`).
@@ -38,6 +39,14 @@ pub struct AppConfig {
     /// Token-bucket burst capacity above the steady-state rate.
     #[serde(default = "default_burst")]
     pub rate_limit_burst: u32,
+
+    /// Maximum number of concurrent database futures when processing a batch
+    /// CUD request (POST/PUT/DELETE with multiple items).
+    ///
+    /// Caps parallelism to avoid exhausting the connection pool.
+    /// Environment variable: `BATCH_CONCURRENCY_LIMIT` (default: 5)
+    #[serde(default = "default_batch_concurrency")]
+    pub batch_concurrency_limit: usize,
 }
 
 impl AppConfig {
@@ -60,8 +69,21 @@ impl AppConfig {
     }
 }
 
-fn default_bind_host() -> String { "127.0.0.1".to_owned() }
-fn default_port()      -> u16    { 4815 }
-fn default_log()       -> String { "info".to_owned() }
-fn default_rps()       -> u64    { 10 }
-fn default_burst()     -> u32    { 30 }
+fn default_bind_host() -> String {
+    "127.0.0.1".to_owned()
+}
+fn default_port() -> u16 {
+    4815
+}
+fn default_log() -> String {
+    "info".to_owned()
+}
+fn default_rps() -> u64 {
+    10
+}
+fn default_burst() -> u32 {
+    30
+}
+fn default_batch_concurrency() -> usize {
+    5
+}

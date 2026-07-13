@@ -1,11 +1,11 @@
 //! HTTP request handlers.
-pub mod health;
+pub mod delete;
 pub mod get;
+pub mod health;
+pub mod not_found;
 pub mod post;
 pub mod put;
-pub mod delete;
 pub mod query;
-pub mod not_found;
 
 // Shared handler helper: extract lowercase header map from Axum HeaderMap.
 pub(crate) fn header_map_to_lowercase(

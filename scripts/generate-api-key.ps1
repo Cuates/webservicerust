@@ -22,6 +22,10 @@ if (-not (Test-Path $EnvFile)) {
 $bytes  = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
 $NewKey = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
 
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+$hashBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($NewKey))
+$NewHash = ($hashBytes | ForEach-Object { $_.ToString("x2") }) -join ""
+
 # ── Prompt for a human-readable label ────────────────────────────────────────
 $Label = Read-Host "Enter a label for this key (e.g. angular-prod, postman-dev)"
 if ([string]::IsNullOrWhiteSpace($Label)) { $Label = "unlabelled" }
@@ -34,21 +38,21 @@ $Current     = if ($CurrentLine) { $CurrentLine -replace '^API_KEYS=', '' } else
 $Current     = $Current.Trim()
 
 if ([string]::IsNullOrEmpty($Current)) {
-    $NewLine = "API_KEYS=$NewKey"
+    $NewLine = "API_KEYS=$NewHash"
 } else {
-    $NewLine = "API_KEYS=$Current,$NewKey"
+    $NewLine = "API_KEYS=$Current,$NewHash"
 }
 
 # Replace the API_KEYS line in the file
 if ($Content -match 'API_KEYS=') {
     $Content = $Content -replace 'API_KEYS=.*', $NewLine
 } else {
-    $Content = $Content.TrimEnd() + "`nAPI_KEYS=$NewKey`n"
+    $Content = $Content.TrimEnd() + "`nAPI_KEYS=$NewHash`n"
 }
 Set-Content -Path $EnvFile -Value $Content -NoNewline
 
 # Count total keys
-$AllKeys = ($NewLine -replace '^API_KEYS=', '') -split ',' | Where-Object { $_ -ne '' }
+$AllKeys = @(($NewLine -replace '^API_KEYS=', '') -split ',' | Where-Object { $_ -ne '' })
 $Total   = $AllKeys.Count
 
 # ── Print the new key (ONCE — copy it immediately) ───────────────────────────

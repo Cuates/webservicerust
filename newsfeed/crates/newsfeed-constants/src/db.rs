@@ -1,8 +1,5 @@
 //! Database-related constants: engine types, procedure names, option modes,
-//! server defaults, and pre-compiled regexes for DB-type detection.
-
-use once_cell::sync::Lazy;
-use regex::Regex;
+//! and server defaults.
 
 // ── Database engine type ──────────────────────────────────────────────────────
 
@@ -20,8 +17,8 @@ impl std::fmt::Display for DatabaseType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Postgres => write!(f, "postgres"),
-            Self::MariaDb  => write!(f, "mariadb"),
-            Self::MsSql    => write!(f, "mssql"),
+            Self::MariaDb => write!(f, "mariadb"),
+            Self::MsSql => write!(f, "mssql"),
         }
     }
 }
@@ -32,24 +29,39 @@ impl std::fmt::Display for DatabaseType {
 pub struct ProcedureMap;
 
 impl ProcedureMap {
-    pub const MARIADB_EXTRACT: &'static str  = "extractnewsfeed";
-    pub const MARIADB_CUD: &'static str      = "insertupdatedeletenewsfeed";
+    pub const MARIADB_EXTRACT: &'static str = "extractnewsfeed";
+    pub const MARIADB_CUD: &'static str = "insertupdatedeletenewsfeed";
     pub const POSTGRES_EXTRACT: &'static str = "extractnewsfeed";
-    pub const POSTGRES_CUD: &'static str     = "insertupdatedeletenewsfeed";
-    pub const MSSQL_EXTRACT: &'static str    = "dbo.extractNewsFeed";
-    pub const MSSQL_CUD: &'static str        = "dbo.insertupdatedeleteNewsFeed";
+    pub const POSTGRES_CUD: &'static str = "insertupdatedeletenewsfeed";
+    pub const MSSQL_EXTRACT: &'static str = "dbo.extractNewsFeed";
+    pub const MSSQL_CUD: &'static str = "dbo.insertupdatedeleteNewsFeed";
 }
 
 // ── Operation modes (passed as the first argument to every procedure) ─────────
 
 /// The `optionMode` value passed to each stored procedure / function.
-pub struct OptionMode;
+///
+/// Using an enum instead of bare `&str` constants gives compile-time safety:
+/// a typo in an `OptionMode` variant is a compiler error, not a silent
+/// runtime failure in the stored procedure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionMode {
+    ExtractFeed,
+    InsertFeed,
+    UpdateFeed,
+    DeleteFeed,
+}
 
 impl OptionMode {
-    pub const EXTRACT_FEED: &'static str = "extractNewsFeed";
-    pub const INSERT_FEED: &'static str  = "insertNewsFeed";
-    pub const UPDATE_FEED: &'static str  = "updateNewsFeed";
-    pub const DELETE_FEED: &'static str  = "deleteNewsFeed";
+    /// Return the exact `optionMode` string expected by the stored procedures.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExtractFeed => "extractNewsFeed",
+            Self::InsertFeed => "insertNewsFeed",
+            Self::UpdateFeed => "updateNewsFeed",
+            Self::DeleteFeed => "deleteNewsFeed",
+        }
+    }
 }
 
 // ── Default connection ports ──────────────────────────────────────────────────
@@ -57,22 +69,7 @@ impl OptionMode {
 pub struct DatabasePort;
 
 impl DatabasePort {
-    pub const MARIADB: u16  = 3306;
+    pub const MARIADB: u16 = 3306;
     pub const POSTGRES: u16 = 5432;
-    pub const MSSQL: u16    = 1433;
+    pub const MSSQL: u16 = 1433;
 }
-
-// ── Pre-compiled regex patterns ───────────────────────────────────────────────
-// Compiled exactly once at program start via once_cell::Lazy.
-
-/// Matches the MariaDB database type identifier string.
-pub static REGEX_MARIADB: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)mariadb").unwrap());
-
-/// Matches the PostgreSQL database type identifier string.
-pub static REGEX_POSTGRES: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)postgres").unwrap());
-
-/// Matches the MSSQL database type identifier string.
-pub static REGEX_MSSQL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)mssql").unwrap());

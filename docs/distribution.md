@@ -25,9 +25,9 @@ You can build the Docker container manually or use `docker-compose`.
 The simplest way to build and run the application locally in an isolated network is using Docker Compose:
 
 ```bash
-docker compose up --build -d
+cargo make docker-up
 ```
-This will mount the `.env` file automatically and map port `4815` to your host machine.
+This shortcut will mount the `.env` file automatically and map port `4815` to your host machine. You can tear it down later using `cargo make docker-down`.
 
 ### Manual Docker Build
 

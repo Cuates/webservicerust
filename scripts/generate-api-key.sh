@@ -22,6 +22,7 @@ fi
 
 # ── Generate 32 random bytes → 64-character hex key ──────────────────────────
 NEW_KEY=$(openssl rand -hex 32)
+NEW_HASH=$(echo -n "$NEW_KEY" | openssl dgst -sha256 | awk '{print $NF}')
 
 # ── Prompt for a human-readable label ────────────────────────────────────────
 read -rp "Enter a label for this key (e.g. angular-prod, postman-dev): " LABEL
@@ -34,10 +35,14 @@ CURRENT_KEYS=$(grep -E '^API_KEYS=' "$ENV_FILE" | sed 's/^API_KEYS=//' || true)
 
 if [[ -z "$CURRENT_KEYS" ]]; then
     # No existing keys — set the value directly
-    sed -i "s/^API_KEYS=.*/API_KEYS=${NEW_KEY}/" "$ENV_FILE"
+    if grep -q '^API_KEYS=' "$ENV_FILE"; then
+        sed -i "s/^API_KEYS=.*/API_KEYS=${NEW_HASH}/" "$ENV_FILE"
+    else
+        echo "API_KEYS=${NEW_HASH}" >> "$ENV_FILE"
+    fi
 else
     # Append to existing comma-separated list
-    sed -i "s/^API_KEYS=.*/API_KEYS=${CURRENT_KEYS},${NEW_KEY}/" "$ENV_FILE"
+    sed -i "s/^API_KEYS=.*/API_KEYS=${CURRENT_KEYS},${NEW_HASH}/" "$ENV_FILE"
 fi
 
 # Count new total

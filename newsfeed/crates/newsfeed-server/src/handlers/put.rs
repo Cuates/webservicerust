@@ -8,52 +8,90 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use futures::StreamExt;
 
-use newsfeed_constants::{db::OptionMode, http::ResponseMessage};
+use newsfeed_constants::{
+    db::OptionMode,
+    http::{PossiblePayloadParams, ResponseMessage},
+};
 use newsfeed_db::pool::AppState;
-use newsfeed_models::ApiResponse;
-use newsfeed_service::{cud_feed, payload_validator::{validate_payload, ValidatedPayload}, validate_headers};
+use newsfeed_models::{ApiResponse, CudParams};
+use newsfeed_service::{
+    cud_feed,
+    payload_validator::{validate_payload, ValidatedPayload},
+    validate_headers,
+};
 
 use crate::handlers::header_map_to_lowercase;
 
+use crate::extractors::AppJson;
+
+#[utoipa::path(
+    put,
+    path = "/api/newsfeed",
+    request_body = CudParams,
+    responses(
+        (status = 200, description = "Updated newsfeed item", body = ApiResponse<serde_json::Value>)
+    )
+)]
 pub async fn handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Json(body): Json<serde_json::Value>,
+    AppJson(body): AppJson<serde_json::Value>,
 ) -> impl IntoResponse {
     // ── 1. Validate headers ───────────────────────────────────────────────────
     let header_map = header_map_to_lowercase(&headers);
-    if let Err(e) = validate_headers(&header_map) {
+    if let Err(e) = validate_headers(&header_map, true) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
+            Json(ApiResponse::<serde_json::Value>::error_with_code(
+                "INVALID_HEADER",
+                e.to_string(),
+            )),
         )
             .into_response();
     }
 
     // ── 2. Validate payload (title is mandatory for update) ───────────────────
-    let items = match validate_payload(&body, &["title"]) {
+    let items = match validate_payload(&body, &[PossiblePayloadParams::TITLE]) {
         Ok(ValidatedPayload::BodyItems(items)) => items,
         Err(e) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
+                Json(ApiResponse::<serde_json::Value>::error_with_code(
+                    "VALIDATION_ERROR",
+                    e.to_string(),
+                )),
             )
                 .into_response();
         }
         _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
-    // ── 3. Execute update for each item ───────────────────────────────────────
+    // ── 3. Execute updates concurrently (bounded by BATCH_CONCURRENCY_LIMIT) ──
+    let concurrency = state.batch_concurrency_limit;
+    let state_ref = &state;
+
+    let results: Vec<Result<Vec<serde_json::Value>, _>> =
+        futures::stream::iter(items.into_iter().map(|params| async move {
+            cud_feed(state_ref, OptionMode::UpdateFeed, &params).await
+        }))
+        .buffer_unordered(concurrency)
+        .collect()
+        .await;
+
     let mut all_results: Vec<serde_json::Value> = Vec::new();
-    for params in &items {
-        match cud_feed(&state, OptionMode::UPDATE_FEED, params).await {
+    for result in results {
+        match result {
             Ok(mut rows) => all_results.append(&mut rows),
             Err(e) => {
                 tracing::error!(error = %e, "PUT /api/newsfeed database error");
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
+                    Json(ApiResponse::<serde_json::Value>::error_with_code(
+                        "DB_ERROR",
+                        e.to_string(),
+                    )),
                 )
                     .into_response();
             }

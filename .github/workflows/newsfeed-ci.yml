@@ -1,0 +1,46 @@
+name: Newsfeed CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'newsfeed/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/newsfeed-ci.yml'
+  pull_request:
+    branches: [ "main", "master" ]
+    paths:
+      - 'newsfeed/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/newsfeed-ci.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+  # Skip database checks in sqlx since we don't have a live DB in CI yet
+  SQLX_OFFLINE: true
+
+jobs:
+  check:
+    name: Check, Lint, and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Newsfeed Environment
+        uses: ./.github/actions/newsfeed-setup
+        
+      - name: Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Cargo Check
+        run: cargo check --workspace
+
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Run Tests
+        run: cargo test --workspace

@@ -1,6 +1,6 @@
 # Newsfeed Web Service
 
-[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cuates/webservicerust/ci.yml?branch=main)](https://github.com/cuates/webservicerust/actions)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-black?logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.8-red)](https://github.com/tokio-rs/axum)
@@ -32,7 +32,7 @@ Comprehensive guides are available in the `docs/` directory:
 - [Architecture Overview](docs/architecture.md)
 - [Scaffolding & Setup](docs/scaffolding.md)
 - [Distribution & Docker](docs/distribution.md)
-- [Makefile Commands](docs/makefile.md)
+- [Cargo Make Commands](docs/cargo-make.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Quick Start

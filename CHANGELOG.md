@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-07-12
+
+### Added
+- **Security**: Added explicit CORS configuration logic using `tower_http::cors::CorsLayer`.
+- **Tooling**: Implemented cross-platform `cargo-make` build tasks in `Makefile.toml` for unified CI/CD.
+
+### Changed
+- **Release**: Bumped workspace version to 1.0.0 for stable release.
+- **Error Handling**: Standardized API JSON errors using a custom `AppJson` extractor to prevent plain-text leaks on 400/415 errors.
+- **Error Handling**: Formatted `tower_governor` 429 rate limit responses into standardized JSON.
+- **Security**: Ignored upstream unpatchable vulnerabilities (`RUSTSEC-2023-0071`, `RUSTSEC-2026-0097`) in `cargo audit` to unblock CI.
+
+### Removed
+- **Tooling**: Deleted legacy `Makefile` and `make.ps1` scripts in favor of the new `Makefile.toml`.
+
+## [0.0.2] - 2026-07-12
+
+### Changed
+- **Performance**: Replaced per-request MSSQL TCP handshakes with a `bb8-tiberius` async connection pool.
+- **Performance**: Upgraded sequential CUD handler loops to run concurrent futures via `buffer_unordered` (bounded by `BATCH_CONCURRENCY_LIMIT`).
+- **Security**: Hardened API key validation using `subtle::ConstantTimeEq` to prevent timing side-channel attacks.
+- **Correctness**: Ensured GET/QUERY routes don't enforce `Content-Type` headers.
+- **Config**: Exposed DB pool tuning settings (`DB_POOL_MAX`, timeouts) and MSSQL TLS encryption settings via environment variables.
+
 ## [0.0.1] - 2026-07-11
 
 ### Added

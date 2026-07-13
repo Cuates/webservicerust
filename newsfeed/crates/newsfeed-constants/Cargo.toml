@@ -4,6 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-once_cell.workspace = true
-regex.workspace     = true
-serde               = { workspace = true }
+serde = { workspace = true }
