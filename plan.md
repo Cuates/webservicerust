@@ -13,6 +13,7 @@ The initial rewrite from Python FastAPI to Rust Axum is 100% complete and stable
 6. **Infrastructure**: Multi-stage Docker container built; bash/powershell scripts for secure API key management delivered.
 7. **Tooling & Stability**: Replaced ad-hoc scripts with cross-platform `cargo-make`, standardized JSON HTTP errors (`AppJson`, 429), verified CORS preflight, and released `1.1.0`.
 8. **Testing & CI**: Implemented comprehensive integration tests (`axum-test`), auto-generated OpenAPI documentation (`utoipa`), and established GitHub Actions workflows enforcing strict code coverage thresholds (`cargo-llvm-cov`).
+9. **Release Automation**: Implemented a GitHub Actions release pipeline (`newsfeed-release.yml`) for cross-platform artifact bundling and published version `1.2.0`.
 
 ### Next Up (Future Planning)
 - **Monitoring**: Add Prometheus/OpenTelemetry metrics exporting.

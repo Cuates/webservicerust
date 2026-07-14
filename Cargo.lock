@@ -1523,7 +1523,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-config"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "dotenvy",
  "envy",
@@ -1534,14 +1534,14 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-constants"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "newsfeed-db"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "bb8",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-models"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1570,7 +1570,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-server"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-service"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "newsfeed-constants",
  "newsfeed-db",

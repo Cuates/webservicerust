@@ -1,6 +1,6 @@
 # Newsfeed Web Service
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cuates/webservicerust/newsfeed-ci.yml?branch=main)](https://github.com/cuates/webservicerust/actions)
 [![Coverage](https://img.shields.io/badge/coverage-35%25-brightgreen.svg)](Makefile.toml)
 [![Rust](https://img.shields.io/badge/Rust-1.97+-black?logo=rust)](https://www.rust-lang.org/)
@@ -32,7 +32,7 @@ Comprehensive guides are available in the `docs/` directory:
 
 - [Architecture Overview](docs/architecture.md)
 - [Scaffolding & Setup](docs/scaffolding.md)
-- [Distribution & Docker](docs/distribution.md)
+- [Distribution, Docker, & GitHub Releases](docs/distribution.md)
 - [Cargo Make Commands](docs/cargo-make.md)
 - [Troubleshooting](docs/troubleshooting.md)
 

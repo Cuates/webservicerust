@@ -49,3 +49,35 @@ Once the container is running, the OpenAPI interactive documentation is availabl
 
 - **Reverse Proxy**: While Axum is robust, it's generally recommended to place a reverse proxy (like Nginx, Traefik, or an AWS Application Load Balancer) in front of the container for SSL termination and distributed DDoS protection.
 - **Environment Variables**: In production, do not mount the `.env` file. Instead, inject the environment variables natively through your orchestration platform (e.g., Kubernetes ConfigMaps/Secrets, AWS ECS Task Definitions, or Docker Swarm Secrets).
+
+## GitHub Releases
+
+We use GitHub Actions to automatically build and bundle compiled binaries for Linux, macOS, and Windows. 
+
+To trigger a new release build for the `newsfeed` service, you must commit your version bumps and push a specific Git tag. Follow this exact sequence in your terminal:
+
+**1. Stage and commit your changes:**
+```bash
+git add .
+git commit -m "chore: bump version to 1.2.0"
+```
+
+**2. Create the Git tag:**
+Use the `newsfeed-v*` prefix convention to ensure the monorepo only builds the newsfeed project.
+```bash
+git tag newsfeed-v1.2.0
+```
+
+**3. Push the commit to GitHub:**
+```bash
+git push origin main
+```
+*(This pushes the code changes and triggers the standard `newsfeed-ci.yml` testing pipeline).*
+
+**4. Push the tag to GitHub:**
+```bash
+git push origin newsfeed-v1.2.0
+```
+*(This pushes the tag, which instantly triggers the `newsfeed-release.yml` pipeline).*
+
+The automated pipeline will compile the binary in release mode, bundle it with `.env.example`, `README.md`, and `LICENSE` in a `.tar.gz` (or `.zip` for Windows) archive, and publish it as a GitHub Release.

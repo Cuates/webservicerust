@@ -36,4 +36,4 @@ graph TD
 - **Legacy Python**: `constants.py` -> `newsfeed-constants`; `newsfeedwebservice.py` -> `newsfeed-service` & `newsfeed-server`.
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> `{ "error": "message" }`.
 - **Build System**: `cargo-make` (`Makefile.toml`) powers all cross-platform builds and checks.
-- **Continuous Integration**: GitHub Actions workflows execute `cargo make test-coverage` to strictly enforce minimum code coverage thresholds.
+- **Continuous Integration**: GitHub Actions workflows execute `cargo make test-coverage` to strictly enforce minimum code coverage thresholds, and a separate `newsfeed-release.yml` pipeline automates cross-platform builds and artifact bundling on version tags.

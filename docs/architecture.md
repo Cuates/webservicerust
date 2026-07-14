@@ -25,8 +25,12 @@ webservicerust
 |   START_HERE.md
 |   
 +---.github/
+|   +---actions/
+|   |   \---newsfeed-setup/
+|   |           action.yml
 |   \---workflows/
 |           newsfeed-ci.yml
+|           newsfeed-release.yml
 |   
 +---docs/
 |   |   architecture.md
@@ -37,6 +41,7 @@ webservicerust
 |   |   
 |   \---adr/
 |           0001-rust-monorepo-migration.md
+|           0002-github-actions-release-pipeline.md
 |           
 +---newsfeed/
 |   +---crates/
