@@ -15,3 +15,5 @@ This is the only binary crate in the workspace. It compiles down to the actual e
 - **Error Standardization**: Implements a custom `AppJson` extractor overriding Axum's default serialization to ensure `400` and `415` errors are returned as structured JSON instead of plain-text.
 - **Tracing & CORS**: Integrates `tower_http` layers for robust structured logging and Cross-Origin Resource Sharing capabilities.
 - **Graceful Shutdown**: Listens for SIGINT (Ctrl+C) and terminates active connections gracefully.
+- **OpenAPI / Swagger**: Uses `utoipa` to auto-generate OpenAPI specifications and hosts a Swagger UI dashboard at `/swagger-ui`.
+- **Integration Testing**: Contains the workspace's comprehensive `axum-test` integration test suite within the `tests/` directory to verify the full middleware and routing stack.

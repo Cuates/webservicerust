@@ -54,3 +54,11 @@ The service enforces strict configuration validation at startup. If it fails to 
 
 - **Issue**: `cargo build` succeeds locally but the `docker build` fails.
 - **Solution**: Ensure your `.dockerignore` file correctly excludes the `target/` directory and any local `.env` files. Passing a massive local `target/` directory to the Docker build context can cause memory exhaustion and out-of-space errors on the Docker daemon.
+
+## 8. Test Coverage Threshold Failures
+
+- **Issue**: `cargo make test-coverage` or the CI pipeline fails with `Error: coverage is below the required threshold`.
+- **Solution**: 
+  - We enforce strict code coverage thresholds (Lines: 35%, Functions: 35%, Regions: 40%).
+  - The coverage table will print at the bottom of the test run to highlight exactly which files are missing coverage.
+  - You must write unit tests (in the respective crate) or integration tests (in `newsfeed-server/tests/integration_test.rs`) to bump the coverage above the thresholds before committing.

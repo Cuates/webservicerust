@@ -7,7 +7,8 @@ This crate defines all the shared constants and static references used across th
 To prevent hard-coded "magic strings" from being scattered across the codebase, this crate centralizes:
 - **Database Types**: `ProcedureMap` and `OptionMode` mappings.
 - **HTTP Routing**: Route paths and prefix constants.
-- **Regular Expressions**: Pre-compiled regex instances using `once_cell::Lazy` to ensure regex parsing is performed only once at startup, reducing runtime overhead.
+
+*(Note: This crate contains strictly static data, avoiding complex runtime dependencies like regex or lazy_statics to maintain zero overhead).*
 
 ## Usage
 

@@ -90,9 +90,18 @@ args = ["test", "--workspace"]
 
 [tasks.test-coverage]
 workspace = false
-description = "Run tests and generate lcov.info coverage report"
+description = "Run tests, print coverage summary, and generate lcov.info"
+run_task = { name = ["test-coverage-run", "test-coverage-report"] }
+
+[tasks.test-coverage-run]
+private = true
 command = "cargo"
-args = ["llvm-cov", "--workspace", "--all-features", "--lcov", "--output-path", "lcov.info"]
+args = ["llvm-cov", "--workspace", "--all-features", "--fail-under-lines", "35", "--fail-under-functions", "35", "--fail-under-regions", "40"]
+
+[tasks.test-coverage-report]
+private = true
+command = "cargo"
+args = ["llvm-cov", "report", "--lcov", "--output-path", "lcov.info"]
 
 [tasks.docker-build]
 workspace = false

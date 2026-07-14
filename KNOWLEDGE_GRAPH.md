@@ -25,6 +25,9 @@ graph TD
     DB --> |sqlx| Postgres[(PostgreSQL)]
     DB --> |sqlx| MariaDB[(MariaDB)]
     DB --> |tiberius| MSSQL[(MSSQL)]
+    
+    %% Testing
+    TestSuite[axum-test / cargo-llvm-cov] -.-> |Integration Tests| Server
 ```
 
 ## Conceptual Mappings
@@ -33,3 +36,4 @@ graph TD
 - **Legacy Python**: `constants.py` -> `newsfeed-constants`; `newsfeedwebservice.py` -> `newsfeed-service` & `newsfeed-server`.
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> `{ "error": "message" }`.
 - **Build System**: `cargo-make` (`Makefile.toml`) powers all cross-platform builds and checks.
+- **Continuous Integration**: GitHub Actions workflows execute `cargo make test-coverage` to strictly enforce minimum code coverage thresholds.

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-13
+
+### Added
+- **Testing**: Implemented comprehensive unit and integration tests (via `axum-test`) for all API endpoints and core logic.
+- **CI/CD**: Enforced strict code coverage thresholds (Lines: 35%, Functions: 35%, Regions: 40%) using `cargo-llvm-cov` in `Makefile.toml` and GitHub Actions.
+
+### Changed
+- **Release**: Bumped workspace version to 1.1.0 for test coverage enforcement updates.
+- **Security**: Updated `spin` crate from `v0.9.8` to `v0.9.9` to resolve a yanked dependency flagged by `cargo audit`.
+- **Code Quality**: Cleaned up unused variables in integration tests to ensure a warning-free `cargo clippy` run.
+
 ## [1.0.0] - 2026-07-12
 
 ### Added

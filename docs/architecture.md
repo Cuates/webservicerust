@@ -24,6 +24,10 @@ webservicerust
 |   SKILL.md
 |   START_HERE.md
 |   
++---.github/
+|   \---workflows/
+|           newsfeed-ci.yml
+|   
 +---docs/
 |   |   architecture.md
 |   |   distribution.md
@@ -73,25 +77,30 @@ webservicerust
 |   |   +---newsfeed-server/
 |   |   |   |   Cargo.toml
 |   |   |   |   README.md
-|   |   |   \---src/
-|   |   |       |   extractors.rs
-|   |   |       |   main.rs
-|   |   |       |   router.rs
-|   |   |       |   
-|   |   |       +---handlers/
-|   |   |       |       delete.rs
-|   |   |       |       get.rs
-|   |   |       |       health.rs
-|   |   |       |       mod.rs
-|   |   |       |       not_found.rs
-|   |   |       |       post.rs
-|   |   |       |       put.rs
-|   |   |       |       query.rs
-|   |   |       |       
-|   |   |       \---middleware/
-|   |   |               api_key.rs
-|   |   |               mod.rs
-|   |   |               
+|   |   |   +---src/
+|   |   |   |   |   extractors.rs
+|   |   |   |   |   lib.rs
+|   |   |   |   |   main.rs
+|   |   |   |   |   openapi.rs
+|   |   |   |   |   router.rs
+|   |   |   |   |   
+|   |   |   |   +---handlers/
+|   |   |   |   |       delete.rs
+|   |   |   |   |       get.rs
+|   |   |   |   |       health.rs
+|   |   |   |   |       mod.rs
+|   |   |   |   |       not_found.rs
+|   |   |   |   |       post.rs
+|   |   |   |   |       put.rs
+|   |   |   |   |       query.rs
+|   |   |   |   |       
+|   |   |   |   \---middleware/
+|   |   |   |           api_key.rs
+|   |   |   |           mod.rs
+|   |   |   |           
+|   |   |   \---tests/
+|   |   |           integration_test.rs
+|   |   |           
 |   |   \---newsfeed-service/
 |   |       |   Cargo.toml
 |   |       |   README.md
@@ -118,4 +127,9 @@ webservicerust
 3. **`newsfeed-models`**: Contains the core domain models (`ExtractParams`, `CudParams`, `NewsFeedRow`) and handles mapping responses from the database layer and formatting JSON responses.
 4. **`newsfeed-db`**: Handles all Database connections and queries. It exposes generic query methods that abstract away the underlying `DATABASE_TARGET` (PostgreSQL, MariaDB, or MSSQL) from the upper layers. MSSQL is managed via a `bb8-tiberius` async connection pool to avoid TCP handshake overhead.
 5. **`newsfeed-service`**: Contains the core business logic. It handles payload validation, orchestrates requests, and bridges the HTTP handler parameters with the `newsfeed-db` execution methods.
-6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting, API Key Auth, CORS, Tracing), standardizes custom JSON error extraction via `extractors.rs`, and defines all routing logic mapping to the handlers.
+6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting, API Key Auth, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs`, and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
+
+## Continuous Integration & Testing
+- The workspace enforces code coverage thresholds via `cargo-llvm-cov` locally (`cargo make test-coverage`) and in CI (`.github/workflows/newsfeed-ci.yml`).
+- Core logic and payload validation are tested via standard `#[test]` unit tests inside the library crates.
+- API routing and middleware are verified via in-memory server testing in `newsfeed-server/tests/integration_test.rs`.

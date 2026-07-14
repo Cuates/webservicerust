@@ -43,6 +43,8 @@ To run the standalone container with your `.env` file:
 docker run -p 4815:4815 --env-file .env newsfeed-service:latest
 ```
 
+Once the container is running, the OpenAPI interactive documentation is available at `http://localhost:4815/swagger-ui`.
+
 ## Production Considerations
 
 - **Reverse Proxy**: While Axum is robust, it's generally recommended to place a reverse proxy (like Nginx, Traefik, or an AWS Application Load Balancer) in front of the container for SSL termination and distributed DDoS protection.

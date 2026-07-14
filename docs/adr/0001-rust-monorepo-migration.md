@@ -27,3 +27,6 @@ Specifically, we decided to:
 
 ## Update (2026-07-12)
 The monorepo architecture has successfully reached its 1.0.0 stable milestone. All legacy Python scripts, `Makefile`s, and ad-hoc powershell scripts have been entirely removed in favor of native cross-platform Rust build tooling (`cargo-make`) and strict JSON HTTP extractors.
+
+## Update (2026-07-13)
+The architecture has stabilized and reached `1.1.0` with the introduction of comprehensive integration tests via `axum-test` and strict code coverage thresholds enforced by `cargo-llvm-cov` locally and in GitHub Actions CI.

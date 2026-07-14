@@ -41,7 +41,7 @@ We provide cross-platform scripts to securely generate keys and append them dire
 
 You can view or revoke active keys securely using the `revoke-api-key` script in the same folder.
 
-## 4. Building and Running Locally
+## 4. Building, Testing, and Running Locally
 
 To build and test the workspace locally without Docker, we use `cargo-make` shortcuts:
 
@@ -49,8 +49,14 @@ To build and test the workspace locally without Docker, we use `cargo-make` shor
 # Check compilation across all workspace crates
 cargo make check
 
+# Run the test suite and enforce code coverage (Lines: 35%, Functions: 35%, Regions: 40%)
+cargo make test-coverage
+
 # Run the server binary directly
 cargo make run
 ```
 
 When running natively, ensure the `.env` file is in the current working directory, as the application uses `dotenvy` to load it dynamically.
+
+Once the server is running, you can view the interactive OpenAPI documentation at:
+`http://localhost:4815/swagger-ui`

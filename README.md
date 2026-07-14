@@ -1,7 +1,8 @@
 # Newsfeed Web Service
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cuates/webservicerust/newsfeed-ci.yml?branch=main)](https://github.com/cuates/webservicerust/actions)
+[![Coverage](https://img.shields.io/badge/coverage-35%25-brightgreen.svg)](Makefile.toml)
 [![Rust](https://img.shields.io/badge/Rust-1.97+-black?logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.8-red)](https://github.com/tokio-rs/axum)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -12,7 +13,7 @@ A high-performance, strongly-typed Newsfeed API written in Rust. This project re
 
 ## Overview
 
-The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides O(1) API key authentication, token-bucket rate limiting, and highly optimized database connection pooling.
+The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides O(1) API key authentication, token-bucket rate limiting, highly optimized database connection pooling, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds.
 
 ## Architecture
 

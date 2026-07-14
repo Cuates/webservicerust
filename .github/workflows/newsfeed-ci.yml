@@ -42,5 +42,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings
 
-      - name: Run Tests
-        run: cargo test --workspace
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run Tests & Enforce Coverage
+        run: cargo llvm-cov --workspace --all-features --fail-under-lines 35 --fail-under-functions 35 --fail-under-regions 40

@@ -63,3 +63,50 @@ pub struct NewsFeedRow {
     #[serde(rename = "publish_date")]
     pub publishdatereturn: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_params_from_map() {
+        let mut map = HashMap::new();
+        map.insert("title".to_string(), "Test Title".to_string());
+        map.insert("limit".to_string(), "10".to_string());
+
+        let params = ExtractParams::from_map(&map);
+        assert_eq!(params.title.as_deref(), Some("Test Title"));
+        assert_eq!(params.limit.as_deref(), Some("10"));
+        assert_eq!(params.image_url, None);
+    }
+
+    #[test]
+    fn test_cud_params_deserialize() {
+        let json_data = json!({
+            "title": "New Title",
+            "publish_date": "2026-07-13"
+        });
+
+        let params: CudParams = serde_json::from_value(json_data).unwrap();
+        assert_eq!(params.title.as_deref(), Some("New Title"));
+        assert_eq!(params.publish_date.as_deref(), Some("2026-07-13"));
+        assert_eq!(params.image_url, None);
+    }
+
+    #[test]
+    fn test_newsfeed_row_serialize() {
+        let row = NewsFeedRow {
+            titlereturn: Some("Test Row".to_string()),
+            imageurlreturn: Some("http://image.url".to_string()),
+            feedurlreturn: None,
+            actualurlreturn: None,
+            publishdatereturn: None,
+        };
+
+        let serialized = serde_json::to_value(&row).unwrap();
+        assert_eq!(serialized["title"], "Test Row");
+        assert_eq!(serialized["image_url"], "http://image.url");
+        assert!(serialized.get("feed_url").unwrap().is_null());
+    }
+}
