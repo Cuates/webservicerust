@@ -12,15 +12,11 @@ use futures::StreamExt;
 
 use newsfeed_constants::{
     db::OptionMode,
-    http::{PossiblePayloadParams, ResponseMessage},
+    http::{PossiblePayloadParams, ResponseCode, ResponseMessage},
 };
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, CudParams};
-use newsfeed_service::{
-    cud_feed,
-    payload_validator::{validate_payload, ValidatedPayload},
-    validate_headers,
-};
+use newsfeed_service::{cud_feed, payload_validator::validate_payload, validate_headers};
 
 use crate::handlers::header_map_to_lowercase;
 
@@ -45,7 +41,7 @@ pub async fn handler(
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::<serde_json::Value>::error_with_code(
-                "INVALID_HEADER",
+                ResponseCode::INVALID_HEADER,
                 e.to_string(),
             )),
         )
@@ -54,18 +50,17 @@ pub async fn handler(
 
     // ── 2. Validate payload (title is mandatory for delete) ───────────────────
     let items = match validate_payload(&body, &[PossiblePayloadParams::TITLE]) {
-        Ok(ValidatedPayload::BodyItems(items)) => items,
+        Ok(items) => items,
         Err(e) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(ApiResponse::<serde_json::Value>::error_with_code(
-                    "VALIDATION_ERROR",
+                    ResponseCode::VALIDATION_ERROR,
                     e.to_string(),
                 )),
             )
                 .into_response();
         }
-        _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
     // ── 3. Execute deletes concurrently (bounded by BATCH_CONCURRENCY_LIMIT) ──
@@ -89,7 +84,7 @@ pub async fn handler(
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ApiResponse::<serde_json::Value>::error_with_code(
-                        "DB_ERROR",
+                        ResponseCode::DB_ERROR,
                         e.to_string(),
                     )),
                 )

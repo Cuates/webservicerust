@@ -15,6 +15,7 @@ webservicerust
 |   Cargo.lock
 |   Cargo.toml
 |   CHANGELOG.md
+|   docker-compose.test.yml
 |   docker-compose.yml
 |   KNOWLEDGE_GRAPH.md
 |   LICENSE
@@ -127,14 +128,15 @@ webservicerust
 
 ## Architectural Layers
 
-1. **`newsfeed-constants`**: Zero-dependency crate that holds static string definitions, HTTP routes, and database engine variants. (No regex or lazy_statics).
+1. **`newsfeed-constants`**: Zero-dependency crate that holds static string definitions, HTTP routes, unified HTTP error codes/messages (`ResponseCode`, `ResponseMessage`), and database engine variants. (No regex or lazy_statics).
 2. **`newsfeed-config`**: Responsible for parsing environment variables using `envy` into strictly-typed Rust structs at startup. Ensures the app panics early if configuration is invalid. Includes connection pool sizing and concurrency limits.
 3. **`newsfeed-models`**: Contains the core domain models (`ExtractParams`, `CudParams`, `NewsFeedRow`) and handles mapping responses from the database layer and formatting JSON responses.
 4. **`newsfeed-db`**: Handles all Database connections and queries. It exposes generic query methods that abstract away the underlying `DATABASE_TARGET` (PostgreSQL, MariaDB, or MSSQL) from the upper layers. MSSQL is managed via a `bb8-tiberius` async connection pool to avoid TCP handshake overhead.
 5. **`newsfeed-service`**: Contains the core business logic. It handles payload validation, orchestrates requests, and bridges the HTTP handler parameters with the `newsfeed-db` execution methods.
-6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting, API Key Auth, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs`, and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
+6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting, API Key Auth, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs` (using unified `ResponseCode`s), and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
 
 ## Continuous Integration & Testing
 - The workspace enforces code coverage thresholds via `cargo-llvm-cov` locally (`cargo make test-coverage`) and in CI (`.github/workflows/newsfeed-ci.yml`).
 - Core logic and payload validation are tested via standard `#[test]` unit tests inside the library crates.
 - API routing and middleware are verified via in-memory server testing in `newsfeed-server/tests/integration_test.rs`.
+- Integration tests dynamically provision fully isolated, ephemeral databases on random ports using the `testcontainers` crate, eliminating the need for manual Compose setups during automated testing. Manual test databases are available in `docker-compose.test.yml`.

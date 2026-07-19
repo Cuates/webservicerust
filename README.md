@@ -2,7 +2,7 @@
 
 [![GitHub Version](https://img.shields.io/github/v/tag/cuates/webservicerust?label=version&sort=semver)](https://github.com/cuates/webservicerust/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cuates/webservicerust/newsfeed-ci.yml?branch=main)](https://github.com/cuates/webservicerust/actions)
-[![Coverage](https://img.shields.io/badge/coverage-35%25-brightgreen.svg)](Makefile.toml)
+[![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](Makefile.toml)
 [![Rust](https://img.shields.io/badge/Rust-1.97+-black?logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.8-red)](https://github.com/tokio-rs/axum)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -19,7 +19,7 @@ The Newsfeed web service handles CRUD operations for user newsfeeds, supporting 
 
 The project is structured as a Cargo workspace with the following crates:
 
-- **`newsfeed-constants`**: Static string definitions, routes, and compiled regexes.
+- **`newsfeed-constants`**: Static string definitions, routes, unified HTTP error code constants, and compiled regexes.
 - **`newsfeed-config`**: Environment variable parsing and type-safe configuration.
 - **`newsfeed-models`**: Shared domain models and HTTP payload/response types.
 - **`newsfeed-db`**: Database access layer abstracting connection pools and SQL engines.

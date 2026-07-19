@@ -29,7 +29,7 @@ These targets wrap the standard Cargo commands to act across the entire workspac
 | **`cargo make fix`** | Formats code and automatically applies clippy fixes. | `cargo fmt --all && cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings` |
 | **`cargo make audit`** | Scans dependency tree for security vulnerabilities (requires `cargo-audit`). | `cargo audit` |
 | **`cargo make test`** | Runs all unit and integration tests across the entire workspace. | `cargo test --workspace` |
-| **`cargo make test:coverage`** | Generates an lcov coverage report for tests (requires `cargo-llvm-cov`). | `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info` |
+| **`cargo make test-coverage`** | Generates an lcov coverage report for tests (requires `cargo-llvm-cov`). | `cargo llvm-cov` |
 
 ### 🐳 Docker Commands
 
@@ -42,6 +42,7 @@ These targets wrap Docker Compose to simplify container orchestration.
 | **`cargo make docker-down`** | Stops and removes the running containers and networks. | `docker compose down` |
 | **`cargo make docker-restart`** | Quickly restarts the containers. Useful when changing `.env` variables. | `docker compose down && docker compose up -d` |
 | **`cargo make docker-logs`** | Follows (tails) the logs from the `newsfeed-server` container in real time. | `docker compose logs -f newsfeed-server` |
+| **`cargo make clean-test-containers`** | Safely force-removes ONLY orphaned testcontainers generated during testing, ignoring your personal containers. | `docker rm -f ...` |
 
 ### 🔑 Security & Key Management
 

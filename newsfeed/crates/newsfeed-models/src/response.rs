@@ -69,3 +69,53 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_success_response_shape() {
+        let items = vec![json!({"title": "Hello"})];
+        let resp = ApiResponse::success("All good", items);
+
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["Status"], "Success");
+        assert_eq!(serialized["Code"], "OK");
+        assert_eq!(serialized["Message"], "All good");
+        assert_eq!(serialized["Count"], 1);
+        assert_eq!(serialized["Result"][0]["title"], "Hello");
+    }
+
+    #[test]
+    fn test_success_response_count_matches_result_len() {
+        let items: Vec<serde_json::Value> = vec![json!({}), json!({}), json!({})];
+        let resp = ApiResponse::success("ok", items);
+        assert_eq!(resp.count, 3);
+    }
+
+    #[test]
+    fn test_error_response_shape() {
+        let resp = ApiResponse::<serde_json::Value>::error("something went wrong");
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["Status"], "Error");
+        assert_eq!(serialized["Code"], "ERROR");
+        assert_eq!(serialized["Message"], "something went wrong");
+        assert_eq!(serialized["Count"], 0);
+        assert!(serialized["Result"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_error_with_code_response_shape() {
+        let resp = ApiResponse::<serde_json::Value>::error_with_code(
+            "VALIDATION_ERROR",
+            "title is required",
+        );
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["Status"], "Error");
+        assert_eq!(serialized["Code"], "VALIDATION_ERROR");
+        assert_eq!(serialized["Message"], "title is required");
+        assert_eq!(serialized["Count"], 0);
+    }
+}

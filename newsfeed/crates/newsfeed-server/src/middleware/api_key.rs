@@ -17,13 +17,13 @@ use std::fmt::Write;
 
 use axum::{
     body::Body,
-    extract::State,
-    http::{Request, StatusCode},
+    extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
-    response::{IntoResponse, Response},
-    Json,
+    response::{IntoResponse, Json, Response},
 };
 
+use newsfeed_constants::http::{HeaderType, ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
 use newsfeed_models::ApiResponse;
 
@@ -38,7 +38,7 @@ pub async fn api_key_middleware(
 
     let provided_key = req
         .headers()
-        .get("x-api-key")
+        .get(HeaderType::API_KEY)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
@@ -53,7 +53,7 @@ pub async fn api_key_middleware(
 
         let mut hex_hash = String::with_capacity(64);
         for byte in hash_result {
-            let _ = write!(&mut hex_hash, "{:02x}", byte);
+            let _ = write!(&mut hex_hash, "{byte:02x}");
         }
 
         state.api_keys.contains(&hex_hash)
@@ -69,8 +69,8 @@ pub async fn api_key_middleware(
         (
             StatusCode::UNAUTHORIZED,
             Json(ApiResponse::<serde_json::Value>::error_with_code(
-                "UNAUTHORIZED",
-                "Unauthorized",
+                ResponseCode::UNAUTHORIZED,
+                ResponseMessage::UNAUTHORIZED,
             )),
         )
             .into_response()

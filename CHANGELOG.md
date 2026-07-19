@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-18
+
+### Added
+- **Testing**: Achieved 99.57% workspace-wide test coverage and exposed `test-coverage-run` and `test-coverage-report` as public tasks in `Makefile.toml`.
+- **Infrastructure**: Extracted testing databases (`postgres`, `mariadb`, `mssql`) into a dedicated `docker-compose.test.yml`, leaving `docker-compose.yml` exclusively for the core service.
+
+### Changed
+- **Testing**: Migrated integration tests to use the `testcontainers` crate for dynamically provisioning ephemeral databases, removing the need for manual compose setups.
+- **Code Quality**: Squashed magic string literals across HTTP handlers and middleware, centralizing them into unified `ResponseCode`, `ResponseMessage`, and `HeaderType` constants.
+- **Release**: Bumped workspace version to 2.0.0 for the new major release.
+
 ## [1.2.0] - 2026-07-13
 
 ### Added

@@ -23,8 +23,15 @@ env:
 
 jobs:
   check:
-    name: Check, Lint, and Test
+    name: Check, Lint, and Test (${{ matrix.database_target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database_target: [postgres, mariadb, mssql]
+
+    env:
+      DATABASE_TARGET: ${{ matrix.database_target }}
 
     steps:
       - name: Checkout repository

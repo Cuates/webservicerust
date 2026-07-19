@@ -20,7 +20,7 @@ pub async fn extract_feed(
     pool: &MySqlPool,
     params: &ExtractParams,
 ) -> Result<Vec<NewsFeedRow>, DbError> {
-    let rows = sqlx::query_as::<_, NewsFeedRow>("CALL extractnewsfeed(?, ?, ?, ?, ?, ?, ?)")
+    let raw_rows = sqlx::query("CALL extractnewsfeed(?, ?, ?, ?, ?, ?, ?)")
         .bind(OptionMode::ExtractFeed.as_str())
         .bind(params.title.as_deref())
         .bind(params.image_url.as_deref())
@@ -31,8 +31,20 @@ pub async fn extract_feed(
         .fetch_all(pool)
         .await?;
 
-    tracing::debug!("MariaDB extract returned {} row(s)", rows.len());
-    Ok(rows)
+    use sqlx::Row;
+    let mut feed_rows = Vec::with_capacity(raw_rows.len());
+    for row in raw_rows {
+        feed_rows.push(NewsFeedRow {
+            titlereturn: row.try_get(0).ok().flatten(),
+            imageurlreturn: row.try_get(1).ok().flatten(),
+            feedurlreturn: row.try_get(2).ok().flatten(),
+            actualurlreturn: row.try_get(3).ok().flatten(),
+            publishdatereturn: row.try_get(4).ok().flatten(),
+        });
+    }
+
+    tracing::debug!("MariaDB extract returned {} row(s)", feed_rows.len());
+    Ok(feed_rows)
 }
 
 // ── Create / Update / Delete ──────────────────────────────────────────────────
@@ -73,4 +85,30 @@ fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError
         results.push(parsed);
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_status_rows_ok() {
+        let rows = vec![(Some(r#"{"Status":"Success"}"#.to_string()),)];
+        let res = parse_status_rows(rows).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0]["Status"], "Success");
+    }
+
+    #[test]
+    fn test_parse_status_rows_empty_result() {
+        let rows = vec![(None,)];
+
+        assert!(matches!(parse_status_rows(rows), Err(DbError::EmptyResult)));
+    }
+
+    #[test]
+    fn test_parse_status_rows_invalid_json() {
+        let rows = vec![(Some("not json".to_string()),)];
+        assert!(matches!(parse_status_rows(rows), Err(DbError::Json(_))));
+    }
 }

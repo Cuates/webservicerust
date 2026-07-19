@@ -10,12 +10,17 @@ members = [
 ]
 
 [workspace.package]
-version = "1.2.0"
+version = "2.0.0"
 edition = "2021"
 authors  = ["Cuates"]
 license  = "MIT"
 
 # ── Workspace-level lint configuration ────────────────────────────────────────
+[workspace.lints.rust]
+# Declare `coverage_nightly` as a known cfg key used in #![cfg_attr(coverage_nightly, coverage(off))]
+# for excluding entrypoint binaries from llvm-cov instrumentation.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
 [workspace.lints.clippy]
 unwrap_used  = "warn"
 expect_used  = "warn"

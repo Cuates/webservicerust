@@ -82,26 +82,40 @@ description = "Run cargo audit for vulnerabilities"
 command = "cargo"
 args = ["audit", "--ignore", "RUSTSEC-2023-0071", "--ignore", "RUSTSEC-2026-0097"]
 
+[tasks.check-docker]
+workspace = false
+description = "Verify Docker Desktop is running before executing tests that require containers."
+script_runner = "@duckscript"
+script = '''
+out = exec docker ps
+is_empty = is_empty ${out.stdout}
+if ${is_empty}
+    echo "Error: Docker Desktop is not running. Please start it to run integration tests."
+    exit 1
+else
+    echo "[✔] Docker Desktop is running."
+end
+'''
+
 [tasks.test]
 workspace = false
 description = "Run all workspace tests"
+dependencies = ["check-docker"]
 command = "cargo"
 args = ["test", "--workspace"]
 
 [tasks.test-coverage]
 workspace = false
 description = "Run tests, print coverage summary, and generate lcov.info"
-run_task = { name = ["test-coverage-run", "test-coverage-report"] }
+run_task = { name = ["check-docker", "test-coverage-run", "test-coverage-report"] }
 
 [tasks.test-coverage-run]
-private = true
 command = "cargo"
-args = ["llvm-cov", "--workspace", "--all-features", "--fail-under-lines", "35", "--fail-under-functions", "35", "--fail-under-regions", "40"]
+args = ["llvm-cov", "--workspace", "--all-features", "--ignore-filename-regex", ".*main\\.rs", "--fail-under-lines", "99", "--fail-under-functions", "99"]
 
 [tasks.test-coverage-report]
-private = true
 command = "cargo"
-args = ["llvm-cov", "report", "--lcov", "--output-path", "lcov.info"]
+args = ["llvm-cov", "report", "--lcov", "--ignore-filename-regex", ".*main\\.rs", "--output-path", "lcov.info"]
 
 [tasks.docker-build]
 workspace = false
@@ -120,6 +134,22 @@ workspace = false
 description = "Stop containers"
 command = "docker"
 args = ["compose", "down"]
+
+[tasks.clean-test-containers]
+workspace = false
+description = "Safely force-remove ONLY orphaned testcontainers (ignores personal containers)"
+script_runner = "@duckscript"
+script = '''
+out = exec docker ps -a -q --filter "label=org.testcontainers=true"
+is_empty = is_empty ${out.stdout}
+if ${is_empty}
+    echo "No orphaned testcontainers found. Your personal containers are untouched."
+else
+    echo "Found orphaned testcontainers. Removing..."
+    exec docker rm -f ${out.stdout}
+    echo "Cleaned up orphaned testcontainers."
+end
+'''
 
 [tasks.docker-restart]
 workspace = false
@@ -150,4 +180,67 @@ description = "Revoke an existing API key"
 script_runner = "@duckscript"
 script = '''
 exec bash scripts/revoke-api-key.sh
+'''
+
+[tasks.use-postgres]
+workspace = false
+description = "Switch active database backend to PostgreSQL"
+script_runner = "@rust"
+script = '''
+fn main() {
+    let content = std::fs::read_to_string(".env").unwrap();
+    let mut new_content = String::new();
+    for line in content.lines() {
+        if line.starts_with("DATABASE_TARGET=") {
+            new_content.push_str("DATABASE_TARGET=postgres\n");
+        } else {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+    std::fs::write(".env", new_content).unwrap();
+    println!("Switched active database target to: postgres");
+}
+'''
+
+[tasks.use-mariadb]
+workspace = false
+description = "Switch active database backend to MariaDB"
+script_runner = "@rust"
+script = '''
+fn main() {
+    let content = std::fs::read_to_string(".env").unwrap();
+    let mut new_content = String::new();
+    for line in content.lines() {
+        if line.starts_with("DATABASE_TARGET=") {
+            new_content.push_str("DATABASE_TARGET=mariadb\n");
+        } else {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+    std::fs::write(".env", new_content).unwrap();
+    println!("Switched active database target to: mariadb");
+}
+'''
+
+[tasks.use-mssql]
+workspace = false
+description = "Switch active database backend to MSSQL"
+script_runner = "@rust"
+script = '''
+fn main() {
+    let content = std::fs::read_to_string(".env").unwrap();
+    let mut new_content = String::new();
+    for line in content.lines() {
+        if line.starts_with("DATABASE_TARGET=") {
+            new_content.push_str("DATABASE_TARGET=mssql\n");
+        } else {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+    std::fs::write(".env", new_content).unwrap();
+    println!("Switched active database target to: mssql");
+}
 '''

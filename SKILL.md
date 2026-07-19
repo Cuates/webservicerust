@@ -10,7 +10,7 @@ When working on the Newsfeed Rust Web Service, you must strictly adhere to the f
 ## Core Directives
 
 1. **Workspace Integrity**: This is a multi-crate Cargo workspace. Never merge crates into a monolith.
-2. **Configuration Over Hardcoding**: Do not hardcode configuration strings, routes, or settings. Use `newsfeed-config` (parsed via `envy`) for environment variables, and `newsfeed-constants` for static application constants.
+2. **Configuration Over Hardcoding**: Do not hardcode configuration strings, routes, or settings. Use `newsfeed-config` (parsed via `envy`) for environment variables, and `newsfeed-constants` for static application constants (including HTTP error `ResponseCode`s).
 3. **Strict Crate Boundaries**:
    - `newsfeed-server` handles ONLY HTTP transport (Extractors, Responses, Middleware).
    - `newsfeed-service` handles ONLY business logic and validation.
@@ -20,4 +20,4 @@ When working on the Newsfeed Rust Web Service, you must strictly adhere to the f
 5. **Database Agnosticism**: The `newsfeed-service` must remain agnostic to the underlying database. Let `DATABASE_TARGET` in `newsfeed-db` dictate whether to use `postgres.rs`, `mariadb.rs`, or `mssql.rs`.
 6. **Zero-Trust Validation**: Never trust incoming HTTP payloads. All data must pass through `ExtractParams` or `CudParams` validation in `newsfeed-service` before being processed.
 7. **Tooling**: Always use `cargo make` (defined in `Makefile.toml`) for running checks, tests (`cargo make test-coverage`), and builds, rather than raw `cargo` commands.
-8. **Test Coverage**: Ensure any new logic is covered by unit or integration tests. The CI pipeline will reject commits if the strict coverage thresholds drop below requirements.
+8. **Test Coverage**: Ensure any new logic is covered by unit or integration tests. The CI pipeline will reject commits if the strict coverage thresholds (99%) drop below requirements.

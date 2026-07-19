@@ -87,3 +87,110 @@ fn default_burst() -> u32 {
 fn default_batch_concurrency() -> usize {
     5
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_config(api_keys: &str, allowed_origins: &str) -> AppConfig {
+        AppConfig {
+            bind_host: "127.0.0.1".to_owned(),
+            app_port: 4815,
+            rust_log: "info".to_owned(),
+            api_keys: api_keys.to_owned(),
+            allowed_origins: allowed_origins.to_owned(),
+            rate_limit_rps: 10,
+            rate_limit_burst: 30,
+            batch_concurrency_limit: 5,
+        }
+    }
+
+    #[test]
+    fn test_origins_vec_single() {
+        let cfg = make_config("key1", "http://localhost");
+        assert_eq!(cfg.origins_vec(), vec!["http://localhost"]);
+    }
+
+    #[test]
+    fn test_origins_vec_multiple() {
+        let cfg = make_config("key1", "http://localhost, https://example.com");
+        assert_eq!(
+            cfg.origins_vec(),
+            vec!["http://localhost", "https://example.com"]
+        );
+    }
+
+    #[test]
+    fn test_origins_vec_filters_empty() {
+        let cfg = make_config("key1", "http://localhost,,");
+        assert_eq!(cfg.origins_vec(), vec!["http://localhost"]);
+    }
+
+    #[test]
+    fn test_api_keys_set_single() {
+        let cfg = make_config("abc123", "http://localhost");
+        let keys = cfg.api_keys_set();
+        assert!(keys.contains("abc123"));
+        assert_eq!(keys.len(), 1);
+    }
+
+    #[test]
+    fn test_api_keys_set_multiple() {
+        let cfg = make_config("key_a, key_b, key_c", "http://localhost");
+        let keys = cfg.api_keys_set();
+        assert!(keys.contains("key_a"));
+        assert!(keys.contains("key_b"));
+        assert!(keys.contains("key_c"));
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn test_api_keys_set_filters_empty() {
+        let cfg = make_config("key_a,,key_b", "http://localhost");
+        let keys = cfg.api_keys_set();
+        assert_eq!(keys.len(), 2);
+    }
+
+    #[test]
+    fn test_default_fields() {
+        let cfg = make_config("k", "o");
+        assert_eq!(cfg.bind_host, "127.0.0.1");
+        assert_eq!(cfg.app_port, 4815);
+        assert_eq!(cfg.rate_limit_rps, 10);
+        assert_eq!(cfg.rate_limit_burst, 30);
+        assert_eq!(cfg.batch_concurrency_limit, 5);
+    }
+
+    #[test]
+    fn test_app_config_defaults() {
+        let config: AppConfig = envy::from_iter(vec![
+            ("API_KEYS".to_string(), "".to_string()),
+            ("ALLOWED_ORIGINS".to_string(), "".to_string()),
+        ])
+        .unwrap();
+        assert_eq!(config.bind_host, "127.0.0.1");
+        assert_eq!(config.app_port, 4815);
+        assert_eq!(config.rust_log, "info");
+        assert_eq!(config.rate_limit_rps, 10);
+        assert_eq!(config.rate_limit_burst, 30);
+        assert_eq!(config.batch_concurrency_limit, 5);
+        assert!(config.api_keys.is_empty());
+        assert!(config.allowed_origins.is_empty());
+    }
+    #[test]
+    fn test_app_config_defaults_serde() {
+        // Deserializing an empty JSON object forces serde to invoke all default_ functions
+        // for fields that are missing, which perfectly exercises the default fallback code paths.
+        let json_str = r#"{"api_keys":"", "allowed_origins":""}"#;
+        let config: AppConfig = serde_json::from_str(json_str).unwrap();
+
+        assert_eq!(config.bind_host, "127.0.0.1");
+        assert_eq!(config.app_port, 4815);
+        assert_eq!(config.rust_log, "info");
+        assert_eq!(config.rate_limit_rps, 10);
+        assert_eq!(config.rate_limit_burst, 30);
+        assert_eq!(config.batch_concurrency_limit, 5);
+        assert!(config.api_keys.is_empty());
+        assert!(config.allowed_origins.is_empty());
+    }
+}

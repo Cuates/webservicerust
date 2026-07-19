@@ -11,3 +11,10 @@ newsfeed-db        = { path = "../newsfeed-db" }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
 tracing    = { workspace = true }
+
+[dev-dependencies]
+sqlx         = { workspace = true }
+tiberius     = { workspace = true }
+bb8          = { workspace = true }
+bb8-tiberius = { workspace = true }
+tokio        = { workspace = true }

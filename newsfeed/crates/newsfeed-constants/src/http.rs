@@ -63,6 +63,19 @@ impl ResponseStatus {
     pub const ERROR: &'static str = "Error";
 }
 
+// ── Standard API response error codes ─────────────────────────────────────────
+
+pub struct ResponseCode;
+
+impl ResponseCode {
+    pub const INVALID_HEADER: &'static str = "INVALID_HEADER";
+    pub const VALIDATION_ERROR: &'static str = "VALIDATION_ERROR";
+    pub const DB_ERROR: &'static str = "DB_ERROR";
+    pub const BAD_REQUEST: &'static str = "BAD_REQUEST";
+    pub const RATE_LIMIT_EXCEEDED: &'static str = "RATE_LIMIT_EXCEEDED";
+    pub const UNAUTHORIZED: &'static str = "UNAUTHORIZED";
+}
+
 // ── Standard API response messages ───────────────────────────────────────────
 
 pub struct ResponseMessage;
@@ -74,6 +87,9 @@ impl ResponseMessage {
     pub const UNAUTHORIZED: &'static str = "Unauthorized";
     pub const TOO_MANY_REQUESTS: &'static str = "Too Many Requests";
     pub const METHOD_NOT_ALLOWED: &'static str = "Method Not Allowed";
+    pub const FAILED_TO_READ_BODY: &'static str = "Failed to read request body";
+    pub const TOO_MANY_REQUESTS_RETRY: &'static str =
+        "Too many requests. Please wait and try again.";
 }
 
 // ── Payload parameter names (lowercase, as normalised from requests) ──────────

@@ -62,9 +62,6 @@ impl AppState {
     /// - Validates that `API_KEYS` contains at least one key (panics otherwise).
     /// - Applies pool-tuning env vars to sqlx and bb8 pools.
     pub async fn init(app_cfg: &AppConfig, db_cfg: &DatabaseConfig) -> Result<Self, DbError> {
-        // Validate that required DB env vars are present for the active target.
-        db_cfg.validate();
-
         // ── Startup guard: refuse to start with zero API keys ─────────────────
         let api_keys = app_cfg.api_keys_set();
         if api_keys.is_empty() {
@@ -186,5 +183,247 @@ impl AppState {
             api_keys,
             batch_concurrency_limit: app_cfg.batch_concurrency_limit,
         })
+    }
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use newsfeed_config::{AppConfig, DatabaseConfig, DatabaseTarget};
+
+    fn postgres_app_cfg(api_keys: &str) -> AppConfig {
+        AppConfig {
+            bind_host: "127.0.0.1".to_string(),
+            app_port: 4815,
+            rust_log: "error".to_string(),
+            api_keys: api_keys.to_string(),
+            allowed_origins: "http://localhost".to_string(),
+            rate_limit_rps: 10,
+            rate_limit_burst: 10,
+            batch_concurrency_limit: 5,
+        }
+    }
+
+    fn postgres_db_cfg() -> DatabaseConfig {
+        DatabaseConfig {
+            database_target: DatabaseTarget::Postgres,
+            postgres_url: Some("postgres://fake:fake@localhost/fake".to_string()),
+            mariadb_url: None,
+            mssql_host: None,
+            mssql_port: None,
+            mssql_database: None,
+            mssql_username: None,
+            mssql_password: None,
+            db_mssql_encrypt: false,
+            db_mssql_trust_cert: false,
+            db_pool_max: 2,
+            db_pool_min: 1,
+            db_acquire_timeout_secs: 1,
+        }
+    }
+
+    // ── AppState::init error paths ────────────────────────────────────────────
+
+    /// When API_KEYS is empty, `init` must return Err(DbError::Config).
+    #[tokio::test]
+    async fn test_init_fails_with_empty_api_keys() {
+        let app_cfg = postgres_app_cfg(""); // empty key string
+        let db_cfg = postgres_db_cfg();
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(result.is_err(), "expected Err for empty API keys");
+        match result {
+            Err(DbError::Config(_)) => {} // expected
+            Err(other) => panic!("expected DbError::Config, got: {other}"),
+            Ok(_) => panic!("expected Err but got Ok"),
+        }
+    }
+
+    // ── DbPool::ping error paths ──────────────────────────────────────────────
+
+    /// Postgres lazy pool — ping must fail (no real server behind fake URL).
+    #[tokio::test]
+    async fn test_ping_postgres_fails_on_fake_pool() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(100))
+            .connect_lazy("postgres://fake:fake@localhost/fake")
+            .expect("lazy pool must be created without connecting");
+        let db_pool = DbPool::Postgres(pool);
+        let result = db_pool.ping().await;
+        assert!(
+            result.is_err(),
+            "expected ping error from fake Postgres pool"
+        );
+    }
+
+    /// MariaDB lazy pool — ping must fail (no real server behind fake URL).
+    #[tokio::test]
+    async fn test_ping_mariadb_fails_on_fake_pool() {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(100))
+            .connect_lazy("mysql://fake:fake@localhost/fake")
+            .expect("lazy pool must be created without connecting");
+        let db_pool = DbPool::MariaDb(pool);
+        let result = db_pool.ping().await;
+        assert!(
+            result.is_err(),
+            "expected ping error from fake MariaDB pool"
+        );
+    }
+
+    /// MSSQL bb8 pool — ping must fail (non-routable address with 1 ms timeout).
+    #[tokio::test]
+    async fn test_ping_mssql_fails_on_fake_pool() {
+        let mut cfg = tiberius::Config::new();
+        cfg.host("127.0.0.2"); // non-routable
+        cfg.port(1);
+        cfg.authentication(tiberius::AuthMethod::sql_server("fake", "fake"));
+        cfg.encryption(tiberius::EncryptionLevel::NotSupported);
+
+        let mgr = bb8_tiberius::ConnectionManager::new(cfg);
+        let pool = bb8::Pool::builder().build_unchecked(mgr);
+
+        let db_pool = DbPool::MsSql(Arc::new(pool));
+        let result = db_pool.ping().await;
+        assert!(result.is_err(), "expected ping error from fake MSSQL pool");
+    }
+
+    // ── AppState::init configuration error paths ──────────────────────────────
+
+    #[tokio::test]
+    async fn test_init_postgres_missing_url() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.postgres_url = None; // Missing URL
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_postgres_connection_failure() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        // Provide a URL that fails to connect (e.g. non-routable with 1s timeout)
+        db_cfg.postgres_url = Some("postgres://fake:fake@127.0.0.2:1/fake".to_string());
+        db_cfg.db_acquire_timeout_secs = 1;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(result.is_err()); // sqlx::Error connection refused or timeout
+    }
+
+    #[tokio::test]
+    async fn test_init_mariadb_missing_url() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MariaDb;
+        db_cfg.mariadb_url = None;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_mariadb_connection_failure() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MariaDb;
+        db_cfg.mariadb_url = Some("mysql://fake:fake@127.0.0.2:1/fake".to_string());
+        db_cfg.db_acquire_timeout_secs = 1;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_missing_host() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = None;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_missing_database() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = Some("127.0.0.2".to_string());
+        db_cfg.mssql_database = None;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_missing_username() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = Some("127.0.0.2".to_string());
+        db_cfg.mssql_database = Some("db".to_string());
+        db_cfg.mssql_username = None;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_missing_password() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = Some("127.0.0.2".to_string());
+        db_cfg.mssql_database = Some("db".to_string());
+        db_cfg.mssql_username = Some("sa".to_string());
+        db_cfg.mssql_password = None;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(matches!(result, Err(DbError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_connection_failure() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = Some("127.0.0.2".to_string()); // non-routable
+        db_cfg.mssql_port = Some(1);
+        db_cfg.mssql_database = Some("db".to_string());
+        db_cfg.mssql_username = Some("sa".to_string());
+        db_cfg.mssql_password = Some("fake".to_string());
+        db_cfg.db_mssql_encrypt = false;
+        db_cfg.db_mssql_trust_cert = false;
+        db_cfg.db_acquire_timeout_secs = 1;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        // bb8 creates the pool lazily, so building the pool succeeds even if it can't connect.
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_init_mssql_encryption_and_trust() {
+        let app_cfg = postgres_app_cfg("test_key");
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.database_target = DatabaseTarget::MsSql;
+        db_cfg.mssql_host = Some("127.0.0.2".to_string());
+        db_cfg.mssql_port = Some(1);
+        db_cfg.mssql_database = Some("db".to_string());
+        db_cfg.mssql_username = Some("sa".to_string());
+        db_cfg.mssql_password = Some("fake".to_string());
+
+        // This covers the specific lines for these toggles
+        db_cfg.db_mssql_encrypt = true;
+        db_cfg.db_mssql_trust_cert = true;
+        db_cfg.db_acquire_timeout_secs = 1;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        // bb8 creates the pool lazily, so building the pool succeeds even if it can't connect.
+        assert!(result.is_ok());
     }
 }

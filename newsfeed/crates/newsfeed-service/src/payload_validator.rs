@@ -57,24 +57,12 @@ pub fn validate_headers(
     Ok(())
 }
 
-// ── Validated payload type ────────────────────────────────────────────────────
-
-/// The result of successful payload validation.
-pub enum ValidatedPayload {
-    /// GET / QUERY: normalised query-param map.
-    QueryParams(HashMap<String, String>),
-    /// POST / PUT / DELETE: list of validated body objects.
-    BodyItems(Vec<CudParams>),
-}
-
 // ── Payload validation ────────────────────────────────────────────────────────
 
 /// Validate GET / QUERY query parameters (no mandatory params for reads).
-pub fn validate_get_params(
-    raw: &HashMap<String, String>,
-) -> Result<ValidatedPayload, ServiceError> {
+pub fn validate_get_params(raw: &HashMap<String, String>) -> HashMap<String, String> {
     // Keys are expected to match ExtractParams field names exactly (snake_case).
-    Ok(ValidatedPayload::QueryParams(raw.clone()))
+    raw.clone()
 }
 
 /// Validate POST / PUT / DELETE JSON body.
@@ -83,7 +71,7 @@ pub fn validate_get_params(
 pub fn validate_payload(
     body: &serde_json::Value,
     mandatory: &[&str],
-) -> Result<ValidatedPayload, ServiceError> {
+) -> Result<Vec<CudParams>, ServiceError> {
     let items = match body {
         serde_json::Value::Array(arr) => arr.clone(),
         obj @ serde_json::Value::Object(_) => vec![obj.clone()],
@@ -124,7 +112,7 @@ pub fn validate_payload(
         validated.push(params);
     }
 
-    Ok(ValidatedPayload::BodyItems(validated))
+    Ok(validated)
 }
 
 #[cfg(test)]
@@ -182,7 +170,6 @@ mod tests {
 
     #[test]
     fn test_validate_payload_valid_object() {
-        // Needs mandatory fields, e.g., "feed_id" depending on what is passed
         let payload = json!({
             "id": 1,
             "feed_id": "test_feed",
@@ -191,11 +178,8 @@ mod tests {
 
         let result = validate_payload(&payload, &["feed_id"]);
         assert!(result.is_ok());
-        if let Ok(ValidatedPayload::BodyItems(items)) = result {
-            assert_eq!(items.len(), 1);
-        } else {
-            panic!("Expected BodyItems");
-        }
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
     }
 
     #[test]
@@ -207,11 +191,8 @@ mod tests {
 
         let result = validate_payload(&payload, &["feed_id"]);
         assert!(result.is_ok());
-        if let Ok(ValidatedPayload::BodyItems(items)) = result {
-            assert_eq!(items.len(), 2);
-        } else {
-            panic!("Expected BodyItems");
-        }
+        let items = result.unwrap();
+        assert_eq!(items.len(), 2);
     }
 
     #[test]
@@ -253,12 +234,75 @@ mod tests {
         let mut query = HashMap::new();
         query.insert("feed_id".to_string(), "test_feed".to_string());
 
-        let result = validate_get_params(&query);
-        assert!(result.is_ok());
-        if let Ok(ValidatedPayload::QueryParams(params)) = result {
-            assert_eq!(params.get("feed_id").unwrap(), "test_feed");
-        } else {
-            panic!("Expected QueryParams");
-        }
+        let params = validate_get_params(&query);
+        assert_eq!(params.get("feed_id").unwrap(), "test_feed");
+    }
+
+    #[test]
+    fn test_validate_payload_empty_array() {
+        let payload = json!([]);
+        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        assert_eq!(err.to_string(), "Invalid payload: Payload elements missing");
+    }
+
+    #[test]
+    fn test_validate_payload_invalid_item() {
+        // structural error, title should be string (if present) but got number
+        let payload = json!({
+            "feed_id": "feed1",
+            "title": 123
+        });
+        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        assert!(err
+            .to_string()
+            .starts_with("Invalid payload: Failed to parse payload item:"));
+    }
+
+    #[test]
+    fn test_validate_payload_null_mandatory_field() {
+        // Covers the `Some(serde_json::Value::Null)` arm of the None|Null pattern
+        let payload = json!({"feed_id": null});
+        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        assert!(matches!(err, ServiceError::MissingMandatoryParam(_)));
+    }
+
+    #[test]
+    fn test_validate_headers_missing_accept() {
+        // Empty header map — accept defaults to "" which fails the check
+        let headers = HashMap::new();
+        let result = validate_headers(&headers, false);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_headers_invalid_charset() {
+        // Covers the charset != PossibleHeaderType::CHARSET branch
+        let mut headers = HashMap::new();
+        headers.insert(
+            HeaderType::ACCEPT.to_string(),
+            PossibleHeaderType::ACCEPT.to_string(),
+        );
+        headers.insert(
+            HeaderType::CONTENT_TYPE.to_string(),
+            "application/json; charset=latin-1".to_string(),
+        );
+        let result = validate_headers(&headers, true);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_headers_invalid_content_type() {
+        // Covers the content_type != PossibleHeaderType::CONTENT_TYPE branch
+        let mut headers = HashMap::new();
+        headers.insert(
+            HeaderType::ACCEPT.to_string(),
+            PossibleHeaderType::ACCEPT.to_string(),
+        );
+        headers.insert(
+            HeaderType::CONTENT_TYPE.to_string(),
+            "text/plain; charset=utf-8".to_string(),
+        );
+        let result = validate_headers(&headers, true);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
     }
 }

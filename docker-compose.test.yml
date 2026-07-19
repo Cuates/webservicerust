@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: newsfeed-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_DB: db
+    volumes:
+      - ./newsfeed/crates/newsfeed-db/tests/sql/init_postgres.sql:/docker-entrypoint-initdb.d/init_postgres.sql
+    ports:
+      - "5432:5432"
+
+  mariadb:
+    image: mariadb:10.6
+    container_name: newsfeed-mariadb
+    restart: unless-stopped
+    profiles: ["mariadb"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db
+    volumes:
+      - ./newsfeed/crates/newsfeed-db/tests/sql/init_mariadb.sql:/docker-entrypoint-initdb.d/init_mariadb.sql
+    ports:
+      - "3306:3306"
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: newsfeed-mssql
+    restart: unless-stopped
+    profiles: ["mssql"]
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: Password123!
+    volumes:
+      - ./newsfeed/crates/newsfeed-db/tests/sql/init_mssql.sql:/init_mssql.sql
+    ports:
+      - "1433:1433"

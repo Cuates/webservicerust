@@ -1,23 +1,21 @@
 //! GET /api/newsfeed — extract (read) handler.
 
-use std::sync::Arc;
-
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    Json,
+    http::{
+        header::{ETAG, IF_NONE_MATCH},
+        HeaderMap, StatusCode,
+    },
+    response::{IntoResponse, Json},
 };
-use std::collections::HashMap;
-
-use newsfeed_constants::http::ResponseMessage;
+use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, ExtractParams};
-use newsfeed_service::{
-    extract_feed,
-    payload_validator::{validate_get_params, ValidatedPayload},
-    validate_headers,
-};
+use newsfeed_service::{extract_feed, payload_validator::validate_get_params, validate_headers};
+use sha2::Digest;
+use std::collections::HashMap;
+use std::fmt::Write;
+use std::sync::Arc;
 
 use crate::handlers::header_map_to_lowercase;
 
@@ -31,6 +29,7 @@ use crate::handlers::header_map_to_lowercase;
         (status = 200, description = "List of newsfeed items", body = ApiResponse<serde_json::Value>)
     )
 )]
+#[allow(clippy::implicit_hasher)]
 pub async fn handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -43,7 +42,7 @@ pub async fn handler(
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::<serde_json::Value>::error_with_code(
-                "INVALID_HEADER",
+                ResponseCode::INVALID_HEADER,
                 e.to_string(),
             )),
         )
@@ -51,20 +50,8 @@ pub async fn handler(
     }
 
     // ── 2. Validate / normalise query params ──────────────────────────────────
-    let params = match validate_get_params(&raw_params) {
-        Ok(ValidatedPayload::QueryParams(p)) => ExtractParams::from_map(&p),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiResponse::<serde_json::Value>::error_with_code(
-                    "VALIDATION_ERROR",
-                    e.to_string(),
-                )),
-            )
-                .into_response();
-        }
-        _ => ExtractParams::default(),
-    };
+    let p = validate_get_params(&raw_params);
+    let params = ExtractParams::from_map(&p);
 
     // ── 3. Execute extract ────────────────────────────────────────────────────
     match extract_feed(&state, &params).await {
@@ -72,19 +59,16 @@ pub async fn handler(
             let response = ApiResponse::success(ResponseMessage::PROCESSED, rows);
             let body_bytes = serde_json::to_vec(&response).unwrap_or_default();
 
-            use sha2::Digest;
             let mut hasher = sha2::Sha256::new();
             sha2::Digest::update(&mut hasher, &body_bytes);
             let hash_result = sha2::Digest::finalize(hasher);
 
-            use std::fmt::Write;
             let mut hex_hash = String::with_capacity(64);
             for byte in hash_result {
-                let _ = write!(&mut hex_hash, "{:02x}", byte);
+                let _ = write!(&mut hex_hash, "{byte:02x}");
             }
-            let etag = format!("\"{}\"", hex_hash);
+            let etag = format!("\"{hex_hash}\"");
 
-            use axum::http::header::{ETAG, IF_NONE_MATCH};
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH) {
                 if if_none_match.as_bytes() == etag.as_bytes() {
                     return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
@@ -98,7 +82,7 @@ pub async fn handler(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse::<serde_json::Value>::error_with_code(
-                    "DB_ERROR",
+                    ResponseCode::DB_ERROR,
                     e.to_string(),
                 )),
             )

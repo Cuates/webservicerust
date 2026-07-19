@@ -73,3 +73,38 @@ impl DatabasePort {
     pub const POSTGRES: u16 = 5432;
     pub const MSSQL: u16 = 1433;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_option_mode_as_str() {
+        assert_eq!(OptionMode::ExtractFeed.as_str(), "extractNewsFeed");
+        assert_eq!(OptionMode::InsertFeed.as_str(), "insertNewsFeed");
+        assert_eq!(OptionMode::UpdateFeed.as_str(), "updateNewsFeed");
+        assert_eq!(OptionMode::DeleteFeed.as_str(), "deleteNewsFeed");
+    }
+
+    #[test]
+    fn test_database_type_display() {
+        assert_eq!(DatabaseType::Postgres.to_string(), "postgres");
+        assert_eq!(DatabaseType::MariaDb.to_string(), "mariadb");
+        assert_eq!(DatabaseType::MsSql.to_string(), "mssql");
+    }
+
+    #[test]
+    fn test_database_port_constants() {
+        assert_eq!(DatabasePort::MARIADB, 3306);
+        assert_eq!(DatabasePort::POSTGRES, 5432);
+        assert_eq!(DatabasePort::MSSQL, 1433);
+    }
+
+    #[test]
+    fn test_procedure_map_constants() {
+        assert_eq!(ProcedureMap::MARIADB_EXTRACT, "extractnewsfeed");
+        assert_eq!(ProcedureMap::POSTGRES_CUD, "insertupdatedeletenewsfeed");
+        assert_eq!(ProcedureMap::MSSQL_EXTRACT, "dbo.extractNewsFeed");
+        assert_eq!(ProcedureMap::MSSQL_CUD, "dbo.insertupdatedeleteNewsFeed");
+    }
+}

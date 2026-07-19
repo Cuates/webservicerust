@@ -43,7 +43,7 @@ The service enforces strict configuration validation at startup. If it fails to 
 - **Issue**: You send a payload and receive a JSON error mentioning "Unsupported Media Type" or syntax errors.
 - **Solution**: 
   - Ensure you are sending the `Content-Type: application/json` header.
-  - Verify your JSON payload is perfectly formatted. Our custom `AppJson` extractor intentionally masks raw stack traces and instead returns standardized `{ "error": "message" }` blocks to prevent data leaks.
+  - Verify your JSON payload is perfectly formatted. Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
 
 ## 6. API Returns CORS Errors (or Missing Headers)
 
@@ -59,6 +59,6 @@ The service enforces strict configuration validation at startup. If it fails to 
 
 - **Issue**: `cargo make test-coverage` or the CI pipeline fails with `Error: coverage is below the required threshold`.
 - **Solution**: 
-  - We enforce strict code coverage thresholds (Lines: 35%, Functions: 35%, Regions: 40%).
+  - We enforce strict code coverage thresholds across the workspace (99%).
   - The coverage table will print at the bottom of the test run to highlight exactly which files are missing coverage.
   - You must write unit tests (in the respective crate) or integration tests (in `newsfeed-server/tests/integration_test.rs`) to bump the coverage above the thresholds before committing.

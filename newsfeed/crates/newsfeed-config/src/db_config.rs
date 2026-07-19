@@ -112,3 +112,124 @@ fn default_pool_min() -> u32 {
 fn default_acquire_timeout() -> u64 {
     5
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use newsfeed_constants::db::DatabaseType;
+
+    fn base_config(target: DatabaseType) -> DatabaseConfig {
+        DatabaseConfig {
+            database_target: target,
+            postgres_url: None,
+            mariadb_url: None,
+            mssql_host: None,
+            mssql_port: None,
+            mssql_database: None,
+            mssql_username: None,
+            mssql_password: None,
+            db_mssql_encrypt: false,
+            db_mssql_trust_cert: false,
+            db_pool_max: 10,
+            db_pool_min: 2,
+            db_acquire_timeout_secs: 5,
+        }
+    }
+
+    #[test]
+    fn test_validate_postgres_ok() {
+        let cfg = DatabaseConfig {
+            postgres_url: Some("postgres://user:pass@localhost/db".to_owned()),
+            ..base_config(DatabaseType::Postgres)
+        };
+        cfg.validate(); // Must not panic.
+    }
+
+    #[test]
+    #[should_panic(expected = "POSTGRES_URL is not set")]
+    fn test_validate_postgres_missing_url() {
+        let cfg = base_config(DatabaseType::Postgres);
+        cfg.validate();
+    }
+
+    #[test]
+    fn test_validate_mariadb_ok() {
+        let cfg = DatabaseConfig {
+            mariadb_url: Some("mysql://user:pass@localhost/db".to_owned()),
+            ..base_config(DatabaseType::MariaDb)
+        };
+        cfg.validate(); // Must not panic.
+    }
+
+    #[test]
+    #[should_panic(expected = "MARIADB_URL is not set")]
+    fn test_validate_mariadb_missing_url() {
+        let cfg = base_config(DatabaseType::MariaDb);
+        cfg.validate();
+    }
+
+    #[test]
+    fn test_validate_mssql_ok() {
+        let cfg = DatabaseConfig {
+            mssql_host: Some("localhost".to_owned()),
+            mssql_port: Some(1433),
+            mssql_database: Some("media".to_owned()),
+            mssql_username: Some("sa".to_owned()),
+            mssql_password: Some("Password123!".to_owned()),
+            ..base_config(DatabaseType::MsSql)
+        };
+        cfg.validate(); // Must not panic.
+    }
+
+    #[test]
+    #[should_panic(expected = "the following env vars are not set")]
+    fn test_validate_mssql_missing_fields() {
+        let cfg = base_config(DatabaseType::MsSql);
+        cfg.validate();
+    }
+
+    #[test]
+    fn test_database_type_display() {
+        assert_eq!(DatabaseType::Postgres.to_string(), "postgres");
+        assert_eq!(DatabaseType::MariaDb.to_string(), "mariadb");
+        assert_eq!(DatabaseType::MsSql.to_string(), "mssql");
+    }
+
+    #[test]
+    fn test_default_pool_values() {
+        let cfg = DatabaseConfig {
+            postgres_url: Some("postgres://u:p@h/d".to_owned()),
+            ..base_config(DatabaseType::Postgres)
+        };
+        assert_eq!(cfg.db_pool_max, 10);
+        assert_eq!(cfg.db_pool_min, 2);
+        assert_eq!(cfg.db_acquire_timeout_secs, 5);
+        assert!(!cfg.db_mssql_encrypt);
+        assert!(!cfg.db_mssql_trust_cert);
+    }
+
+    #[test]
+    fn test_db_config_defaults() {
+        let config: DatabaseConfig = envy::from_iter(vec![(
+            "DATABASE_TARGET".to_string(),
+            "postgres".to_string(),
+        )])
+        .unwrap();
+        assert_eq!(config.db_pool_max, 10);
+        assert_eq!(config.db_pool_min, 2);
+        assert_eq!(config.db_acquire_timeout_secs, 5);
+        assert!(!config.db_mssql_encrypt);
+        assert!(!config.db_mssql_trust_cert);
+    }
+    #[test]
+    fn test_db_config_defaults_serde() {
+        let json_str = r#"{"database_target":"postgres"}"#;
+        let config: DatabaseConfig = serde_json::from_str(json_str).unwrap();
+
+        assert_eq!(config.db_pool_max, 10);
+        assert_eq!(config.db_pool_min, 2);
+        assert_eq!(config.db_acquire_timeout_secs, 5);
+        assert!(!config.db_mssql_encrypt);
+        assert!(!config.db_mssql_trust_cert);
+    }
+}

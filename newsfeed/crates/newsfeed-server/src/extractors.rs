@@ -3,6 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use newsfeed_constants::http::ResponseCode;
 use newsfeed_models::ApiResponse;
 
 /// A custom JSON extractor that wraps axum's `Json` extractor.
@@ -22,8 +23,10 @@ where
             Err(rejection) => {
                 let status = rejection.status();
                 let body_text = rejection.body_text();
-                let payload =
-                    ApiResponse::<serde_json::Value>::error_with_code("BAD_REQUEST", &body_text);
+                let payload = ApiResponse::<serde_json::Value>::error_with_code(
+                    ResponseCode::BAD_REQUEST,
+                    &body_text,
+                );
                 Err((status, Json(payload)).into_response())
             }
         }

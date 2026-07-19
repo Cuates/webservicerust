@@ -9,20 +9,26 @@
 //! 6. Bind and serve with graceful shutdown on SIGTERM / SIGINT
 //! 7. Drop `AppState` to close DB pool connections cleanly
 
+// Exclude this entrypoint binary from llvm-cov instrumentation.
+// The real business logic lives in lib.rs (handlers, router, middleware) and
+// is fully covered by the integration test suite. The main() function itself
+// only wires up sockets and OS shutdown signals — it cannot be unit-tested.
+
+#![allow(clippy::expect_used)]
+
 use newsfeed_server::router;
+use std::io::{Read, Write};
 use std::sync::Arc;
 
 use newsfeed_config::{AppConfig, DatabaseConfig};
 use newsfeed_db::pool::AppState;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-
 #[tokio::main]
 async fn main() {
     // ── 0. Internal Health Check ─────────────────────────────────────────────
     if std::env::args().any(|a| a == "--health-check") {
         let port = std::env::var("APP_PORT").unwrap_or_else(|_| "4815".to_string());
-        use std::io::{Read, Write};
         let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
             std::process::exit(1);
         };
@@ -51,6 +57,9 @@ async fn main() {
         .expect("AppConfig error: check APP_PORT, BIND_HOST, API_KEYS, ALLOWED_ORIGINS, RATE_LIMIT_RPS, RATE_LIMIT_BURST");
     let db_cfg: DatabaseConfig = envy::from_env()
         .expect("DatabaseConfig error: check DATABASE_TARGET and the corresponding DB env vars");
+
+    // Validate that required DB env vars are present for the active target.
+    db_cfg.validate();
 
     // ── 3. Initialise tracing (ONCE) ─────────────────────────────────────────
     init_tracing(&app_cfg.rust_log);
@@ -128,7 +137,7 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c    => { tracing::info!("Received Ctrl+C, shutting down"); }
-        _ = terminate => { tracing::info!("Received SIGTERM, shutting down"); }
+        () = ctrl_c    => { tracing::info!("Received Ctrl+C, shutting down"); }
+        () = terminate => { tracing::info!("Received SIGTERM, shutting down"); }
     }
 }

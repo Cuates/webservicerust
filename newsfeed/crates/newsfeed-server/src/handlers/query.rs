@@ -18,25 +18,23 @@
 //! dispatched via the `.fallback()` on the `MethodRouter` for `/api/newsfeed`.
 //! Unknown methods (anything other than QUERY) are rejected with 405.
 
-use std::sync::Arc;
-
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, StatusCode},
-    response::IntoResponse,
-    Json,
+    http::{
+        header::{ETAG, IF_NONE_MATCH},
+        Request, StatusCode,
+    },
+    response::{IntoResponse, Json},
 };
-use std::collections::HashMap;
-
-use newsfeed_constants::http::{MethodType, ResponseMessage};
+use newsfeed_constants::http::{MethodType, ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, ExtractParams};
-use newsfeed_service::{
-    extract_feed,
-    payload_validator::{validate_get_params, ValidatedPayload},
-    validate_headers,
-};
+use newsfeed_service::{extract_feed, payload_validator::validate_get_params, validate_headers};
+use sha2::Digest;
+use std::collections::HashMap;
+use std::fmt::Write;
+use std::sync::Arc;
 
 use crate::handlers::header_map_to_lowercase;
 
@@ -59,7 +57,10 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
     if let Err(e) = validate_headers(&header_map, false) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
+            Json(ApiResponse::<serde_json::Value>::error_with_code(
+                ResponseCode::INVALID_HEADER,
+                e.to_string(),
+            )),
         )
             .into_response();
     }
@@ -78,17 +79,14 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
 
     // ── 3. Parse optional JSON body (body fields override URL params) ─────────
     let (parts, body_bytes_stream) = req.into_parts();
-    let body_bytes = match axum::body::to_bytes(body_bytes_stream, 1024 * 1024).await {
-        Ok(b) => b,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiResponse::<serde_json::Value>::error(
-                    "Failed to read request body",
-                )),
-            )
-                .into_response();
-        }
+    let Ok(body_bytes) = axum::body::to_bytes(body_bytes_stream, 1024 * 1024).await else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<serde_json::Value>::error(
+                ResponseMessage::FAILED_TO_READ_BODY,
+            )),
+        )
+            .into_response();
     };
 
     let mut merged_params = url_params;
@@ -105,9 +103,10 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
             Err(e) => {
                 return (
                     StatusCode::BAD_REQUEST,
-                    Json(ApiResponse::<serde_json::Value>::error(format!(
-                        "Invalid JSON body: {e}"
-                    ))),
+                    Json(ApiResponse::<serde_json::Value>::error_with_code(
+                        ResponseCode::BAD_REQUEST,
+                        e.to_string(),
+                    )),
                 )
                     .into_response();
             }
@@ -115,17 +114,8 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
     }
 
     // ── 4. Validate merged params ─────────────────────────────────────────────
-    let params = match validate_get_params(&merged_params) {
-        Ok(ValidatedPayload::QueryParams(p)) => ExtractParams::from_map(&p),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
-            )
-                .into_response();
-        }
-        _ => ExtractParams::default(),
-    };
+    let p = validate_get_params(&merged_params);
+    let params = ExtractParams::from_map(&p);
 
     // ── 5. Execute extract ────────────────────────────────────────────────────
     match extract_feed(&state, &params).await {
@@ -133,19 +123,16 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
             let response = ApiResponse::success(ResponseMessage::PROCESSED, rows);
             let body_bytes = serde_json::to_vec(&response).unwrap_or_default();
 
-            use sha2::Digest;
             let mut hasher = sha2::Sha256::new();
             sha2::Digest::update(&mut hasher, &body_bytes);
             let hash_result = sha2::Digest::finalize(hasher);
 
-            use std::fmt::Write;
             let mut hex_hash = String::with_capacity(64);
             for byte in hash_result {
-                let _ = write!(&mut hex_hash, "{:02x}", byte);
+                let _ = write!(&mut hex_hash, "{byte:02x}");
             }
-            let etag = format!("\"{}\"", hex_hash);
+            let etag = format!("\"{hex_hash}\"");
 
-            use axum::http::header::{ETAG, IF_NONE_MATCH};
             if let Some(if_none_match) = parts.headers.get(IF_NONE_MATCH) {
                 if if_none_match.as_bytes() == etag.as_bytes() {
                     return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
@@ -158,7 +145,10 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: Request<Body>) -> 
             tracing::error!(error = %e, "QUERY /api/newsfeed database error");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<serde_json::Value>::error(e.to_string())),
+                Json(ApiResponse::<serde_json::Value>::error_with_code(
+                    ResponseCode::DB_ERROR,
+                    e.to_string(),
+                )),
             )
                 .into_response()
         }

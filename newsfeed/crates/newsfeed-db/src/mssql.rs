@@ -42,11 +42,11 @@ pub async fn extract_feed(
     let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         results.push(NewsFeedRow {
-            titlereturn: row.get::<&str, _>("titlereturn").map(str::to_owned),
-            imageurlreturn: row.get::<&str, _>("imageurlreturn").map(str::to_owned),
-            feedurlreturn: row.get::<&str, _>("feedurlreturn").map(str::to_owned),
-            actualurlreturn: row.get::<&str, _>("actualurlreturn").map(str::to_owned),
-            publishdatereturn: row.get::<&str, _>("publishdatereturn").map(str::to_owned),
+            titlereturn: row.get::<&str, _>("title").map(str::to_owned),
+            imageurlreturn: row.get::<&str, _>("imageurl").map(str::to_owned),
+            feedurlreturn: row.get::<&str, _>("feedurl").map(str::to_owned),
+            actualurlreturn: row.get::<&str, _>("actualurl").map(str::to_owned),
+            publishdatereturn: row.get::<&str, _>("publishdate").map(str::to_owned),
         });
     }
     tracing::debug!("MSSQL extract returned {} row(s)", results.len());

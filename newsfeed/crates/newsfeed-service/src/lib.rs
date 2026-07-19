@@ -9,4 +9,4 @@ pub mod payload_validator;
 
 pub use error::ServiceError;
 pub use feed_service::{cud_feed, extract_feed};
-pub use payload_validator::{validate_headers, validate_payload, ValidatedPayload};
+pub use payload_validator::{validate_get_params, validate_headers, validate_payload};
