@@ -81,3 +81,25 @@ git push origin newsfeed-v2.0.0
 *(This pushes the tag, which instantly triggers the `newsfeed-release.yml` pipeline).*
 
 The automated pipeline will compile the binary in release mode, bundle it with `.env.example`, `README.md`, and `LICENSE` in a `.tar.gz` (or `.zip` for Windows) archive, and publish it as a GitHub Release.
+
+### Retriggering a Failed Release
+
+If a release build fails or you need to update a tag with a hotfix, you can delete and recreate the tag to retrigger the pipeline.
+
+**1. Fix your code and commit the changes:**
+```bash
+git add .
+git commit -m "fix: address release build failure"
+```
+
+**2. Delete the old failing tag (locally and on GitHub):**
+```bash
+git tag -d newsfeed-v2.0.0
+git push origin --delete newsfeed-v2.0.0
+```
+
+**3. Create the tag again on your new commit and push it:**
+```bash
+git tag newsfeed-v2.0.0
+git push origin newsfeed-v2.0.0
+```

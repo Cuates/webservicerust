@@ -17,7 +17,8 @@ We will use the `testcontainers` crate to programmatically provision fully isola
 1. **Dynamic Provisioning**: Integration tests will dynamically download (if missing) and start the necessary Docker images (`postgres`, `mariadb`, `mcr.microsoft.com/mssql/server`) directly within the Rust test runner.
 2. **Randomized Ports**: Each container will bind to a random host port, completely eliminating port collisions and allowing parallel test execution across multiple CI runners.
 3. **Automated Teardown**: `testcontainers` utilizes the `Drop` trait to automatically stop and remove the containers once the tests conclude or if a panic occurs, guaranteeing no orphaned processes.
-4. **Separation of Concerns**: The manual `docker-compose.test.yml` will remain in the repository *strictly* for developers who wish to connect a GUI client (like DBeaver) for manual inspection, but it is entirely decoupled from the automated test suite.
+4. **Active Connection Polling**: To circumvent startup race conditions inherent to container lifecycles (where a database engine logs that it is "ready" before actually opening its TCP socket), tests will employ a dynamic retry loop to repeatedly attempt a connection rather than relying on static timeouts.
+5. **Separation of Concerns**: The manual `docker-compose.test.yml` will remain in the repository *strictly* for developers who wish to connect a GUI client (like DBeaver) for manual inspection, but it is entirely decoupled from the automated test suite.
 
 ## Consequences
 

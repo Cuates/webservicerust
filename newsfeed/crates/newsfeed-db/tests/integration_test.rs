@@ -87,9 +87,22 @@ async fn test_postgres_integration() {
         db_mssql_trust_cert: true,
         db_acquire_timeout_secs: 5,
     };
-    let app_state = newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg)
-        .await
-        .unwrap();
+    let mut retries = 5;
+    let mut app_state = None;
+    while retries > 0 {
+        match newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg).await {
+            Ok(state) => {
+                app_state = Some(state);
+                break;
+            }
+            Err(e) => {
+                println!("Postgres not ready yet, retrying... ({})", e);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let app_state = app_state.expect("Failed to initialize Postgres pool after retries");
     let pool = match app_state.db {
         newsfeed_db::pool::DbPool::Postgres(p) => p,
         _ => panic!("Expected postgres pool"),
@@ -154,8 +167,7 @@ async fn test_mariadb_integration() {
 
     let db_url = format!("mysql://root:root@localhost:{}/db", port);
 
-    // MariaDB might need an extra second to be truly ready even after the log message
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Removed hardcoded sleep, using retry loop during AppState::init
 
     let app_cfg = newsfeed_config::AppConfig {
         bind_host: "127.0.0.1".into(),
@@ -182,9 +194,22 @@ async fn test_mariadb_integration() {
         db_mssql_trust_cert: true,
         db_acquire_timeout_secs: 5,
     };
-    let app_state = newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg)
-        .await
-        .unwrap();
+    let mut retries = 5;
+    let mut app_state = None;
+    while retries > 0 {
+        match newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg).await {
+            Ok(state) => {
+                app_state = Some(state);
+                break;
+            }
+            Err(e) => {
+                println!("MariaDB not ready yet, retrying... ({})", e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let app_state = app_state.expect("Failed to initialize MariaDB pool after retries");
     let pool = match app_state.db {
         newsfeed_db::pool::DbPool::MariaDb(p) => p,
         _ => panic!("Expected mariadb pool"),
@@ -284,8 +309,7 @@ async fn test_mssql_integration() {
     let node = docker.run(image);
     let port = node.get_host_port_ipv4(1433);
 
-    // Give MSSQL a couple of seconds to become fully ready after the log message
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    // Removed hardcoded sleep, using retry loop during TCP connect
 
     let mut config = Config::new();
     config.host("localhost");
@@ -293,9 +317,22 @@ async fn test_mssql_integration() {
     config.authentication(AuthMethod::sql_server("SA", "Password123!"));
     config.trust_cert();
 
-    let tcp = TcpStream::connect(config.get_addr())
-        .await
-        .expect("Failed to connect to mssql tcp");
+    let mut retries = 10;
+    let mut tcp_res = None;
+    while retries > 0 {
+        match TcpStream::connect(config.get_addr()).await {
+            Ok(tcp) => {
+                tcp_res = Some(tcp);
+                break;
+            }
+            Err(e) => {
+                println!("MSSQL not ready yet, retrying... ({})", e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let tcp = tcp_res.expect("Failed to connect to mssql tcp after retries");
     tcp.set_nodelay(true).unwrap();
     let mut client = Client::connect(config, tcp.compat_write())
         .await
