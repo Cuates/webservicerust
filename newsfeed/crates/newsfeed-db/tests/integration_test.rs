@@ -23,9 +23,9 @@ fn init_tracing_for_tests() {
 // Helper to run MSSQL scripts by splitting on GO
 async fn execute_mssql_script(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
-    _script_path: &str,
+    script_path: &str,
 ) {
-    let script = fs::read_to_string("tests/sql/init_mssql.sql").unwrap();
+    let script = fs::read_to_string(script_path).unwrap();
     let script = script.trim_start_matches('\u{feff}');
 
     let mut batch = String::new();
@@ -108,10 +108,9 @@ async fn test_postgres_integration() {
         _ => panic!("Expected postgres pool"),
     };
 
-    // Initialize schema
-    let schema = fs::read_to_string("tests/sql/init_postgres.sql").unwrap();
-    let schema = schema.trim_start_matches('\u{feff}');
-    pool.execute(schema)
+    let schema =
+        fs::read_to_string("migrations/postgres/20260718000000_init_postgres.sql").unwrap();
+    pool.execute(schema.as_str())
         .await
         .expect("Failed to execute postgres schema");
 
@@ -123,9 +122,11 @@ async fn test_postgres_integration() {
         actual_url: Some("http://actual.pg".to_string()),
         publish_date: Some("2026-07-13 00:00:00".to_string()),
     };
-    postgres::cud_feed(&pool, OptionMode::InsertFeed, &cud_params)
-        .await
-        .unwrap();
+    let res = postgres::cud_feed(&pool, OptionMode::InsertFeed, &cud_params).await;
+    if let Err(e) = &res {
+        println!("POSTGRES CUD ERROR: {:?}", e);
+    }
+    res.unwrap();
 
     // Test Extract
     let ext_params = ExtractParams {
@@ -216,20 +217,10 @@ async fn test_mariadb_integration() {
     };
 
     // Initialize schema
-    let schema = fs::read_to_string("tests/sql/init_mariadb.sql").unwrap();
+    let schema = fs::read_to_string("migrations/mariadb/20260718000000_init_mariadb.sql").unwrap();
     let schema = schema
         .trim_start_matches('\u{feff}')
         .replace("DEFINER=`gojeda`@`%`", "");
-
-    // MariaDB dump has DELIMITER commands which sqlx doesn't understand natively.
-    // We will parse out DELIMITER and split the scripts by `;` and `;;`.
-    // A simpler way is to just replace DELIMITER ;; and DELIMITER ; with nothing,
-    // but the procedure bodies have semicolons.
-    // We will execute each statement using a manual split or just use mysql CLI for MariaDB.
-    // For now, let's try just executing the script after replacing DELIMITERs.
-    // Wait, since we are executing via simple query protocol, MariaDB can handle multiple statements
-    // if configured, but stored procedures with embedded semicolons are tricky.
-    // Let's use string splitting by "DELIMITER ;;" and "DELIMITER ;".
 
     let mut current_delimiter = ";";
     let mut buffer = String::new();
@@ -249,12 +240,6 @@ async fn test_mariadb_integration() {
                 .trim_end_matches(current_delimiter)
                 .trim();
             if !stmt.is_empty() {
-                if stmt.contains("CREATE PROCEDURE `insertupdatedeletenewsfeed`") {
-                    println!(
-                        "EXECUTING MARIADB PROCEDURE: {}",
-                        &stmt[0..std::cmp::min(stmt.len(), 200)]
-                    );
-                }
                 conn.execute(stmt)
                     .await
                     .expect("Failed to execute mariadb statement");
@@ -338,8 +323,11 @@ async fn test_mssql_integration() {
         .await
         .expect("Failed to connect to mssql");
 
-    // Initialize schema
-    execute_mssql_script(&mut client, "tests/sql/init_mssql.sql").await;
+    execute_mssql_script(
+        &mut client,
+        "migrations/mssql/20260718000000_init_mssql.sql",
+    )
+    .await;
 
     // We must use master or media DB? The init script creates `media` and then `USE media`.
     // Wait, the Tiberius connection is made to `master` by default. We need to create a connection pool for `media` after creation,

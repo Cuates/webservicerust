@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 authors  = ["Cuates"]
 license  = "MIT"
@@ -46,7 +46,7 @@ sqlx       = { version = "0.8", features = [
     "tls-rustls",
     "macros",
 ] }
-tiberius   = { version = "0.12", default-features = false, features = ["tokio", "native-tls"] }
+tiberius   = { version = "0.12", default-features = false, features = ["tokio", "rustls"] }
 tokio-util = { version = "0.7",  features = ["compat"] }
 bb8        = { version = "0.9" }
 bb8-tiberius = { version = "0.16" }
@@ -74,4 +74,4 @@ opt-level     = 3
 lto           = "thin"
 codegen-units = 1
 strip         = "symbols"
-panic         = "abort"
+panic         = "unwind"

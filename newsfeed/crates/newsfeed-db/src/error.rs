@@ -24,6 +24,9 @@ pub enum DbError {
 
     #[error("Query returned no usable result")]
     EmptyResult,
+
+    #[error("Stored procedure failed: {0}")]
+    ProcedureFailed(String),
 }
 
 impl<E: std::fmt::Debug> From<bb8::RunError<E>> for DbError {

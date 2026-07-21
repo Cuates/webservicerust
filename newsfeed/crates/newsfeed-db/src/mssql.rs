@@ -86,8 +86,47 @@ pub async fn cud_feed(
     let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         let json_str = row.get::<&str, _>("status").ok_or(DbError::EmptyResult)?;
-        let parsed: Value = serde_json::from_str(json_str)?;
+        let parsed = parse_status_json(json_str)?;
         results.push(parsed);
     }
     Ok(results)
+}
+
+fn parse_status_json(json_str: &str) -> Result<Value, DbError> {
+    let parsed: Value = serde_json::from_str(json_str)?;
+    if parsed.get("Status").and_then(Value::as_str) == Some("Error") {
+        return Err(DbError::ProcedureFailed(json_str.to_string()));
+    }
+    Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_parse_status_json_ok() {
+        let json_str = r#"{"Status":"Success","Message":"Record(s) updated"}"#;
+        let parsed = parse_status_json(json_str).unwrap();
+        assert_eq!(
+            parsed,
+            json!({"Status": "Success", "Message": "Record(s) updated"})
+        );
+    }
+
+    #[test]
+    fn test_parse_status_json_invalid_json() {
+        let json_str = r#"{"Status":"Success""#; // malformed
+        assert!(matches!(parse_status_json(json_str), Err(DbError::Json(_))));
+    }
+
+    #[test]
+    fn test_parse_status_json_procedure_failed() {
+        let json_str = r#"{"Status":"Error","Message":"Invalid optionMode"}"#;
+        assert!(matches!(
+            parse_status_json(json_str),
+            Err(DbError::ProcedureFailed(_))
+        ));
+    }
 }

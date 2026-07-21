@@ -69,12 +69,12 @@ pub fn validate_get_params(raw: &HashMap<String, String>) -> HashMap<String, Str
 ///
 /// `mandatory` is the list of field names that must be present and non-empty.
 pub fn validate_payload(
-    body: &serde_json::Value,
+    body: serde_json::Value,
     mandatory: &[&str],
 ) -> Result<Vec<CudParams>, ServiceError> {
     let items = match body {
-        serde_json::Value::Array(arr) => arr.clone(),
-        obj @ serde_json::Value::Object(_) => vec![obj.clone()],
+        serde_json::Value::Array(arr) => arr,
+        obj @ serde_json::Value::Object(_) => vec![obj],
         _ => {
             return Err(ServiceError::InvalidPayload(
                 "Payload must be a JSON object or array".into(),
@@ -88,9 +88,15 @@ pub fn validate_payload(
         ));
     }
 
+    if items.len() > 500 {
+        return Err(ServiceError::InvalidPayload(
+            "Payload exceeds batch limit of 500 items".into(),
+        ));
+    }
+
     let mut validated: Vec<CudParams> = Vec::with_capacity(items.len());
 
-    for item in &items {
+    for item in items.into_iter() {
         // Check all mandatory fields are present and non-null.
         for &key in mandatory {
             match item.get(key) {
@@ -106,7 +112,7 @@ pub fn validate_payload(
             }
         }
 
-        let params: CudParams = serde_json::from_value(item.clone()).map_err(|e| {
+        let params: CudParams = serde_json::from_value(item).map_err(|e| {
             ServiceError::InvalidPayload(format!("Failed to parse payload item: {e}"))
         })?;
         validated.push(params);
@@ -176,7 +182,7 @@ mod tests {
             "name": "Test"
         });
 
-        let result = validate_payload(&payload, &["feed_id"]);
+        let result = validate_payload(payload, &["feed_id"]);
         assert!(result.is_ok());
         let items = result.unwrap();
         assert_eq!(items.len(), 1);
@@ -189,7 +195,7 @@ mod tests {
             { "id": 2, "feed_id": "test_feed_2" }
         ]);
 
-        let result = validate_payload(&payload, &["feed_id"]);
+        let result = validate_payload(payload, &["feed_id"]);
         assert!(result.is_ok());
         let items = result.unwrap();
         assert_eq!(items.len(), 2);
@@ -201,7 +207,7 @@ mod tests {
             "id": 1
         });
 
-        let result = validate_payload(&payload, &["feed_id"]);
+        let result = validate_payload(payload, &["feed_id"]);
         assert!(matches!(
             result,
             Err(ServiceError::MissingMandatoryParam(_))
@@ -214,7 +220,7 @@ mod tests {
             "feed_id": "   "
         });
 
-        let result = validate_payload(&payload, &["feed_id"]);
+        let result = validate_payload(payload, &["feed_id"]);
         assert!(matches!(
             result,
             Err(ServiceError::MissingMandatoryParam(_))
@@ -225,7 +231,7 @@ mod tests {
     fn test_validate_payload_invalid_root_type() {
         let payload = json!("not an object or array");
 
-        let result = validate_payload(&payload, &[]);
+        let result = validate_payload(payload, &[]);
         assert!(matches!(result, Err(ServiceError::InvalidPayload(_))));
     }
 
@@ -241,7 +247,7 @@ mod tests {
     #[test]
     fn test_validate_payload_empty_array() {
         let payload = json!([]);
-        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        let err = validate_payload(payload, &["feed_id"]).unwrap_err();
         assert_eq!(err.to_string(), "Invalid payload: Payload elements missing");
     }
 
@@ -252,7 +258,7 @@ mod tests {
             "feed_id": "feed1",
             "title": 123
         });
-        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        let err = validate_payload(payload, &["feed_id"]).unwrap_err();
         assert!(err
             .to_string()
             .starts_with("Invalid payload: Failed to parse payload item:"));
@@ -262,7 +268,7 @@ mod tests {
     fn test_validate_payload_null_mandatory_field() {
         // Covers the `Some(serde_json::Value::Null)` arm of the None|Null pattern
         let payload = json!({"feed_id": null});
-        let err = validate_payload(&payload, &["feed_id"]).unwrap_err();
+        let err = validate_payload(payload, &["feed_id"]).unwrap_err();
         assert!(matches!(err, ServiceError::MissingMandatoryParam(_)));
     }
 
@@ -304,5 +310,29 @@ mod tests {
         );
         let result = validate_headers(&headers, true);
         assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_payload_batch_limit_exceeded() {
+        use serde_json::json;
+        // Create an array with 501 items
+        let mut items = Vec::new();
+        for _ in 0..501 {
+            items.push(json!({
+                "title": "t",
+                "imageurl": "i",
+                "feedurl": "f",
+                "actualurl": "a",
+                "publishdate": "p"
+            }));
+        }
+        let payload = json!(items);
+        let result = validate_payload(payload, &[]);
+        match result {
+            Err(ServiceError::InvalidPayload(msg)) => {
+                assert_eq!(msg, "Payload exceeds batch limit of 500 items");
+            }
+            _ => panic!("Expected InvalidPayload batch limit error"),
+        }
     }
 }

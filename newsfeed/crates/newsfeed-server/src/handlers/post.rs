@@ -49,7 +49,7 @@ pub async fn handler(
     }
 
     // ── 2. Validate payload (title is mandatory for insert) ───────────────────
-    let items = match validate_payload(&body, &[PossiblePayloadParams::TITLE]) {
+    let items = match validate_payload(body, &[PossiblePayloadParams::TITLE]) {
         Ok(items) => items,
         Err(e) => {
             return (
@@ -85,7 +85,7 @@ pub async fn handler(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ApiResponse::<serde_json::Value>::error_with_code(
                         ResponseCode::DB_ERROR,
-                        e.to_string(),
+                        "Internal Server Error".to_string(),
                     )),
                 )
                     .into_response();

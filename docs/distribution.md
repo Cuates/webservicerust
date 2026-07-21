@@ -48,6 +48,7 @@ Once the container is running, the OpenAPI interactive documentation is availabl
 ## Production Considerations
 
 - **Reverse Proxy**: While Axum is robust, it's generally recommended to place a reverse proxy (like Nginx, Traefik, or an AWS Application Load Balancer) in front of the container for SSL termination and distributed DDoS protection.
+- **Graceful Recovery**: The production release profile is explicitly configured with `panic = "unwind"`, allowing Axum to gracefully catch thread panics and return `HTTP 500` instead of crashing the entire server process.
 - **Environment Variables**: In production, do not mount the `.env` file. Instead, inject the environment variables natively through your orchestration platform (e.g., Kubernetes ConfigMaps/Secrets, AWS ECS Task Definitions, or Docker Swarm Secrets).
 
 ## GitHub Releases
@@ -59,13 +60,13 @@ To trigger a new release build for the `newsfeed` service, you must commit your 
 **1. Stage and commit your changes:**
 ```bash
 git add .
-git commit -m "chore: bump version to 2.0.0"
+git commit -m "chore: bump version to 2.1.0"
 ```
 
 **2. Create the Git tag:**
 Use the `newsfeed-v*` prefix convention to ensure the monorepo only builds the newsfeed project.
 ```bash
-git tag newsfeed-v2.0.0
+git tag newsfeed-v2.1.0
 ```
 
 **3. Push the commit to GitHub:**
@@ -76,7 +77,7 @@ git push origin main
 
 **4. Push the tag to GitHub:**
 ```bash
-git push origin newsfeed-v2.0.0
+git push origin newsfeed-v2.1.0
 ```
 *(This pushes the tag, which instantly triggers the `newsfeed-release.yml` pipeline).*
 
@@ -94,12 +95,12 @@ git commit -m "fix: address release build failure"
 
 **2. Delete the old failing tag (locally and on GitHub):**
 ```bash
-git tag -d newsfeed-v2.0.0
-git push origin --delete newsfeed-v2.0.0
+git tag -d newsfeed-v2.1.0
+git push origin --delete newsfeed-v2.1.0
 ```
 
 **3. Create the tag again on your new commit and push it:**
 ```bash
-git tag newsfeed-v2.0.0
-git push origin newsfeed-v2.0.0
+git tag newsfeed-v2.1.0
+git push origin newsfeed-v2.1.0
 ```

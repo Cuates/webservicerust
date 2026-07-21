@@ -38,6 +38,15 @@ impl DbPool {
             DbPool::MsSql(pool) => pool.get().await.map(|_| ()).map_err(|e| e.to_string()),
         }
     }
+
+    /// Gracefully close the database pool connections.
+    pub async fn close(&self) {
+        match self {
+            DbPool::Postgres(p) => p.close().await,
+            DbPool::MariaDb(p) => p.close().await,
+            DbPool::MsSql(_) => {} // bb8 handles this on drop
+        }
+    }
 }
 
 // ── Application state ─────────────────────────────────────────────────────────
@@ -166,6 +175,8 @@ impl AppState {
                 let pool = bb8::Pool::builder()
                     .max_size(db_cfg.db_pool_max)
                     .connection_timeout(acquire_timeout)
+                    .idle_timeout(Some(Duration::from_secs(300)))
+                    .max_lifetime(Some(Duration::from_secs(1800)))
                     .build(mgr)
                     .await
                     .map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
@@ -425,5 +436,27 @@ mod tests {
         let result = AppState::init(&app_cfg, &db_cfg).await;
         // bb8 creates the pool lazily, so building the pool succeeds even if it can't connect.
         assert!(result.is_ok());
+    }
+    #[tokio::test]
+    async fn test_pool_close() {
+        // Create fake DbPools and just call close on them. It shouldn't panic.
+        // It's hard to assert state changes on close without real connections,
+        // but this provides line coverage for the close() match branches.
+        let pg_pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://fake:5432")
+            .unwrap();
+        let db_pg = DbPool::Postgres(pg_pool);
+        db_pg.close().await;
+
+        let my_pool = sqlx::mysql::MySqlPoolOptions::new()
+            .connect_lazy("mysql://fake:3306")
+            .unwrap();
+        let db_my = DbPool::MariaDb(my_pool);
+        db_my.close().await;
+
+        let bb8_mgr = bb8_tiberius::ConnectionManager::build(tiberius::Config::new()).unwrap();
+        let ms_pool = bb8::Pool::builder().build_unchecked(bb8_mgr);
+        let db_ms = DbPool::MsSql(Arc::new(ms_pool));
+        db_ms.close().await;
     }
 }

@@ -29,10 +29,11 @@ thiserror      = { workspace = true }
 anyhow         = { workspace = true }
 futures        = { workspace = true }
 url            = { version = "2" }
-sha2 = "0.11.0"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 utoipa = "5"
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 async-trait = "0.1.89"
+sha2 = "0.11.0"
 
 [dev-dependencies]
 axum-test      = "21.0.0"
@@ -40,7 +41,6 @@ hex            = "0.4.3"
 sqlx           = { workspace = true }
 testcontainers = "0.15"
 tokio          = { workspace = true }
-sha2           = "0.11.0"
 
 [lints]
 workspace = true

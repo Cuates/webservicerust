@@ -34,7 +34,7 @@ The service enforces strict configuration validation at startup. If it fails to 
 
 - **Issue**: You receive an `HTTP 429 Too Many Requests` response.
 - **Solution**: You are hitting the `tower_governor` rate limiter. 
-  - By default, the limit is `10` requests per second per IP. 
+  - By default, the limit is `10` requests per second per IP. This occurs *before* API key validation to proactively drop malicious traffic.
   - Increase this threshold by setting `RATE_LIMIT_RPS` and `RATE_LIMIT_BURST` to higher values in your `.env` file.
   - Note: If deploying behind a load balancer without proper IP forwarding (`X-Forwarded-For`), the load balancer's IP might trigger the limit for all users. Ensure your load balancer preserves the original client IP.
 
@@ -43,7 +43,8 @@ The service enforces strict configuration validation at startup. If it fails to 
 - **Issue**: You send a payload and receive a JSON error mentioning "Unsupported Media Type" or syntax errors.
 - **Solution**: 
   - Ensure you are sending the `Content-Type: application/json` header.
-  - Verify your JSON payload is perfectly formatted. Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
+  - Verify your JSON payload is perfectly formatted and does not exceed the strict **500-item batch limit** for bulk operations.
+  - Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
 
 ## 6. API Returns CORS Errors (or Missing Headers)
 

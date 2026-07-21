@@ -7,10 +7,10 @@ graph TD
     Client[HTTP Client] --> Server["newsfeed-server (Axum)"]
     
     %% Request Flow
-    Server --> |Validates Rate Limit & API Key| Router
+    Server --> |Rate Limits (IP) & Validates API Key (SHA-256)| Router
     Router --> |Deser| Models["newsfeed-models (ExtractParams/CudParams)"]
     Router --> Service["newsfeed-service (Business Logic)"]
-    Service --> |Validates Payload| DB[newsfeed-db]
+    Service --> |Validates Payload (500-item batch limit)| DB[newsfeed-db]
     
     %% Dependency Arrows (Crate Level)
     Server -.-> Service
@@ -34,7 +34,8 @@ graph TD
 ```
 
 ## Conceptual Mappings
-- **Authentication**: `X-API-Key` HTTP Header -> `HashSet<String>` in `AppState`.
+- **Authentication**: `X-API-Key` HTTP Header -> `SHA-256` hash comparison -> `HashSet<String>` in `AppState`.
+- **Resiliency**: IP-based Rate Limiting occurs *before* Auth to proactively drop malicious connections. All batch processing strictly limits arrays to `500` items.
 - **Database Routing**: `DATABASE_TARGET` env var -> Instantiates specific `DbPool` enum variant -> Routes to `postgres.rs`, `mariadb.rs`, or `mssql.rs`.
 - **Legacy Python**: `constants.py` -> `newsfeed-constants`; `newsfeedwebservice.py` -> `newsfeed-service` & `newsfeed-server`.
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> Structured JSON mapped to unified constants (e.g. `Code: "BAD_REQUEST"`).

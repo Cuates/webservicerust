@@ -64,13 +64,30 @@ webservicerust
 |   |   +---newsfeed-db/
 |   |   |   |   Cargo.toml
 |   |   |   |   README.md
-|   |   |   \---src/
-|   |   |           error.rs
-|   |   |           lib.rs
-|   |   |           mariadb.rs
-|   |   |           mssql.rs
-|   |   |           pool.rs
-|   |   |           postgres.rs
+|   |   |   |   test_columns.rs
+|   |   |   |   
+|   |   |   +---migrations/
+|   |   |   |   +---mariadb/
+|   |   |   |   |       20260718000000_init_mariadb.sql
+|   |   |   |   +---mssql/
+|   |   |   |   |       20260718000000_init_mssql.sql
+|   |   |   |   \---postgres/
+|   |   |   |           20260718000000_init_postgres.sql
+|   |   |   |           
+|   |   |   +---src/
+|   |   |   |       error.rs
+|   |   |   |       lib.rs
+|   |   |   |       mariadb.rs
+|   |   |   |       mssql.rs
+|   |   |   |       pool.rs
+|   |   |   |       postgres.rs
+|   |   |   |       
+|   |   |   \---tests/
+|   |   |       |   integration_test.rs
+|   |   |       \---sql/
+|   |   |               init_mariadb.sql
+|   |   |               init_mssql.sql
+|   |   |               init_postgres.sql
 |   |   |           
 |   |   +---newsfeed-models/
 |   |   |   |   Cargo.toml
@@ -131,9 +148,9 @@ webservicerust
 1. **`newsfeed-constants`**: Zero-dependency crate that holds static string definitions, HTTP routes, unified HTTP error codes/messages (`ResponseCode`, `ResponseMessage`), and database engine variants. (No regex or lazy_statics).
 2. **`newsfeed-config`**: Responsible for parsing environment variables using `envy` into strictly-typed Rust structs at startup. Ensures the app panics early if configuration is invalid. Includes connection pool sizing and concurrency limits.
 3. **`newsfeed-models`**: Contains the core domain models (`ExtractParams`, `CudParams`, `NewsFeedRow`) and handles mapping responses from the database layer and formatting JSON responses.
-4. **`newsfeed-db`**: Handles all Database connections and queries. It exposes generic query methods that abstract away the underlying `DATABASE_TARGET` (PostgreSQL, MariaDB, or MSSQL) from the upper layers. MSSQL is managed via a `bb8-tiberius` async connection pool to avoid TCP handshake overhead.
-5. **`newsfeed-service`**: Contains the core business logic. It handles payload validation, orchestrates requests, and bridges the HTTP handler parameters with the `newsfeed-db` execution methods.
-6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting, API Key Auth, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs` (using unified `ResponseCode`s), and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
+4. **`newsfeed-db`**: Handles all Database connections and queries. It exposes generic query methods that abstract away the underlying `DATABASE_TARGET` (PostgreSQL, MariaDB, or MSSQL) from the upper layers. MSSQL is managed via a `bb8-tiberius` async connection pool to avoid TCP handshake overhead. Employs `sqlx` migrations for Postgres/MariaDB, and custom raw scripts for testing.
+5. **`newsfeed-service`**: Contains the core business logic. It handles payload validation (including a strict 500-item batch limit and efficient JSON deserialization), orchestrates requests, and bridges the HTTP handler parameters with the `newsfeed-db` execution methods.
+6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting via `tower_governor`, Timing-attack resistant API Key Auth via `SHA-256`, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs` (using unified `ResponseCode`s), and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
 
 ## Continuous Integration & Testing
 - The workspace enforces code coverage thresholds via `cargo-llvm-cov` locally (`cargo make test-coverage`) and in CI (`.github/workflows/newsfeed-ci.yml`).

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-20
+
+### Added
+- **Rate Limiting**: Added global rate limiting via Governor to protect API endpoints.
+- **Batch Processing**: Enforced strict 500-item batch limits for payload ingestion to prevent resource exhaustion.
+- **Test Coverage**: Achieved 99.54% line and function test coverage across the workspace crates.
+- **Security**: Added timing-attack resistant API key matching with SHA-256 caching.
+- **CI/CD**: Expanded GitHub Actions OS matrix to include `windows-latest` and `macos-latest`, conditionally running unit tests while running testcontainers-based integration tests and coverage on `ubuntu-latest`.
+- **CI/CD**: Added `cargo audit` to the pipeline for automated security vulnerability scanning.
+- **Database**: Adopted standard `sqlx` migrations for Postgres and MariaDB (placed in `newsfeed-db/migrations/`).
+- **Database**: Introduced MSSQL connection pool tuning (`idle_timeout: 300s`, `max_lifetime: 1800s`) to prevent dead TCP connections.
+
+### Changed
+- **Dependencies**: Resolved `cargo audit` failures by explicitly documenting upstream constraints tied to `tiberius = "0.12.3"`.
+- **Database**: Pruned the backend SQL fixtures to strictly contain `newsfeed` related schema (stripping unrelated media schemas).
+- **Performance**: Replaced `sha2` with `xxhash-rust` for significantly faster ETag payload hashing.
+- **Performance**: Refactored `validate_payload` to consume `serde_json::Value` by value, eliminating unnecessary allocations, and enforced a strict 500-item batch limit.
+- **Reliability**: Configured `panic = "unwind"` in release profiles to allow Axum to gracefully catch and recover from panics.
+- **Security**: Swapped `GovernorLayer` and `ApiKeyLayer` middleware ordering to ensure IPs are rate-limited before consuming resources for API key validation.
+- **Documentation**: Updated `api_key.rs` docstrings to correctly reflect the use of `SHA-256` hashing for timing side-channel mitigation.
+
 ## [2.0.0] - 2026-07-18
 
 ### Added

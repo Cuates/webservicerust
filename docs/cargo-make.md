@@ -27,7 +27,7 @@ These targets wrap the standard Cargo commands to act across the entire workspac
 | **`cargo make check:deadcode`** | Runs clippy specifically to deny any dead code across the workspace. | `cargo clippy --workspace -- -D dead_code` |
 | **`cargo make clean`** | Removes the `target/` directory and build artifacts. | `cargo clean` |
 | **`cargo make fix`** | Formats code and automatically applies clippy fixes. | `cargo fmt --all && cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings` |
-| **`cargo make audit`** | Scans dependency tree for security vulnerabilities (requires `cargo-audit`). | `cargo audit` |
+| **`cargo make audit`** | Scans dependency tree for security vulnerabilities. Explicitly ignores upstream `tiberius` constraints in CI. | `cargo audit` |
 | **`cargo make test`** | Runs all unit and integration tests across the entire workspace. | `cargo test --workspace` |
 | **`cargo make test-coverage`** | Generates an lcov coverage report for tests (requires `cargo-llvm-cov`). | `cargo llvm-cov` |
 

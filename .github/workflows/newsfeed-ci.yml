@@ -23,11 +23,12 @@ env:
 
 jobs:
   check:
-    name: Check, Lint, and Test (${{ matrix.database_target }})
-    runs-on: ubuntu-latest
+    name: Check, Lint, and Test (${{ matrix.database_target }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         database_target: [postgres, mariadb, mssql]
 
     env:
@@ -43,6 +44,14 @@ jobs:
       - name: Format Check
         run: cargo fmt --all -- --check
 
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Cargo Audit
+        # Ignored because `tiberius = "0.12.3"` is locked to `rustls 0.21` which relies on older webpki/pemfile versions.
+        # Future Plan: Remove these once `tiberius` updates to `rustls >= 0.22` or `0.23`.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2025-0134
+
       - name: Cargo Check
         run: cargo check --workspace
 
@@ -52,5 +61,10 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run Tests & Enforce Coverage
+      - name: Run Tests & Enforce Coverage (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: cargo llvm-cov --workspace --all-features --fail-under-lines 35 --fail-under-functions 35 --fail-under-regions 40
+
+      - name: Run Unit Tests (Windows & macOS)
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo test --workspace --lib --bins

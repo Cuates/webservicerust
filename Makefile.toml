@@ -80,7 +80,17 @@ echo " "
 workspace = false
 description = "Run cargo audit for vulnerabilities"
 command = "cargo"
-args = ["audit", "--ignore", "RUSTSEC-2023-0071", "--ignore", "RUSTSEC-2026-0097"]
+args = [
+    "audit",
+    # Ignored because `tiberius = "0.12.3"` is locked to `rustls 0.21` which relies on older webpki/pemfile versions.
+    # Future Plan: Remove these once `tiberius` updates to `rustls >= 0.22` or `0.23`.
+    "--ignore", "RUSTSEC-2023-0071", 
+    "--ignore", "RUSTSEC-2026-0097", 
+    "--ignore", "RUSTSEC-2026-0098", 
+    "--ignore", "RUSTSEC-2026-0099", 
+    "--ignore", "RUSTSEC-2026-0104", 
+    "--ignore", "RUSTSEC-2025-0134"
+]
 
 [tasks.check-docker]
 workspace = false

@@ -239,6 +239,68 @@ async fn test_rate_limiting() {
     assert_eq!(res2.status_code(), StatusCode::TOO_MANY_REQUESTS);
 }
 
+#[tokio::test]
+async fn test_rate_limiting_precedence() {
+    let invalid_api_key = "wrong_key";
+
+    let cfg = AppConfig {
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 1,
+        rate_limit_burst: 1,
+        batch_concurrency_limit: 5,
+    };
+
+    let state = create_test_state();
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 2], // different IP to avoid clashes with other tests
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+
+    let limit_server = TestServer::new(app);
+
+    // 1st request hits 401 Unauthorized because it gets through rate limiter
+    let res1 = limit_server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(invalid_api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .text("invalid payload")
+        .await;
+
+    assert_eq!(res1.status_code(), StatusCode::UNAUTHORIZED);
+
+    // 2nd request hits 429 Too Many Requests because rate limit fires BEFORE auth
+    let res2 = limit_server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(invalid_api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .text("invalid payload")
+        .await;
+
+    assert_eq!(res2.status_code(), StatusCode::TOO_MANY_REQUESTS);
+}
+
 async fn create_live_postgres_state(
     docker: &testcontainers::clients::Cli,
 ) -> (

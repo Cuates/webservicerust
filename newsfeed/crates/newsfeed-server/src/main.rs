@@ -101,6 +101,7 @@ async fn main() {
     // ── 7. Drain DB pools ─────────────────────────────────────────────────────
     // Dropping state signals sqlx/bb8 to close all pooled connections cleanly,
     // so the database server sees normal disconnects rather than TCP resets.
+    state.db.close().await;
     drop(state);
     tracing::info!("Database pools closed. Shutdown complete.");
 }

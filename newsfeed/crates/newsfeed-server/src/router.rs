@@ -1,7 +1,7 @@
 //! Axum router construction and middleware stack assembly.
 //!
 //! Middleware effective order (outer → inner):
-//!   `RequestId` → `TraceLayer` → `CorsLayer` → `RequestBodyLimit` → `ApiKeyLayer` → `RateLimitLayer` → Route dispatch
+//!   `RequestId` → `TraceLayer` → `CorsLayer` → `RequestBodyLimit` → `RateLimitLayer` → `ApiKeyLayer` → Route dispatch
 //!
 //! CORS sits outermost so browser OPTIONS preflight requests are handled and
 //! short-circuited before consuming rate-limit tokens or being checked for an
@@ -72,11 +72,11 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
                 .delete(handlers::delete::handler)
                 .fallback(handlers::query::handler),
         )
-        .layer(governor_layer)
         .layer(axum_middleware::from_fn_with_state(
             Arc::clone(&state),
             api_key::api_key_middleware,
-        ));
+        ))
+        .layer(governor_layer);
 
     Router::new()
         .merge(

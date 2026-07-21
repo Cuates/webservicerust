@@ -78,6 +78,11 @@ fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError
     for (status_json,) in rows {
         let json_str = status_json.ok_or(DbError::EmptyResult)?;
         let parsed: Value = serde_json::from_str(&json_str)?;
+
+        if parsed.get("Status").and_then(Value::as_str) == Some("Error") {
+            return Err(DbError::ProcedureFailed(json_str));
+        }
+
         results.push(parsed);
     }
     Ok(results)
@@ -105,5 +110,14 @@ mod tests {
     fn test_parse_status_rows_invalid_json() {
         let rows = vec![(Some("not json".to_string()),)];
         assert!(matches!(parse_status_rows(rows), Err(DbError::Json(_))));
+    }
+    #[test]
+    fn test_parse_status_rows_procedure_failed() {
+        let json_str = r#"{"Status":"Error","Message":"Invalid optionMode"}"#;
+        let rows = vec![(Some(json_str.to_string()),)];
+        assert!(matches!(
+            parse_status_rows(rows),
+            Err(DbError::ProcedureFailed(_))
+        ));
     }
 }

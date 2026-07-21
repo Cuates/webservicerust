@@ -25,7 +25,7 @@ The application requires environment variables to run.
 
 ## 3. Generating API Keys
 
-The application requires at least one API key configured in the `API_KEYS` environment variable. 
+The application requires at least one API key configured in the `API_KEYS` environment variable. Internally, the service matches these keys using a timing-attack resistant `SHA-256` hashing mechanism.
 
 We provide cross-platform scripts to securely generate keys and append them directly to your `.env` file.
 

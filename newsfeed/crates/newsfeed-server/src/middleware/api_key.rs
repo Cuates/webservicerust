@@ -4,9 +4,8 @@
 //! `AppState`.  Returns `401 Unauthorized` for missing or invalid keys.
 //!
 //! Security properties:
-//! - Constant-time comparison via `subtle::ConstantTimeEq` — prevents timing
-//!   side-channel attacks that would allow an attacker to enumerate valid key
-//!   prefixes byte-by-byte.
+//! - The incoming key is SHA-256 hashed before comparison against the in-memory
+//!   `HashSet`. This naturally mitigates timing side-channel attacks.
 //! - Full key is never logged; only the first 6 characters appear in audit logs.
 //! - Applies to EVERY route except `/health`.
 
@@ -42,22 +41,7 @@ pub async fn api_key_middleware(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Hash the incoming key and compare it against the hashed keys in memory.
-    // This naturally eliminates timing side-channel attacks.
-    let is_valid = if provided_key.is_empty() {
-        false
-    } else {
-        let mut hasher = Sha256::new();
-        hasher.update(provided_key.as_bytes());
-        let hash_result = hasher.finalize();
-
-        let mut hex_hash = String::with_capacity(64);
-        for byte in hash_result {
-            let _ = write!(&mut hex_hash, "{byte:02x}");
-        }
-
-        state.api_keys.contains(&hex_hash)
-    };
+    let is_valid = is_api_key_valid(provided_key, &state.api_keys);
 
     if is_valid {
         // Audit log: first 6 chars only — never the full key.
@@ -74,5 +58,49 @@ pub async fn api_key_middleware(
             )),
         )
             .into_response()
+    }
+}
+
+pub(crate) fn is_api_key_valid(
+    provided_key: &str,
+    valid_keys: &std::collections::HashSet<String>,
+) -> bool {
+    if provided_key.is_empty() {
+        return false;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(provided_key.as_bytes());
+    let hash_result = hasher.finalize();
+
+    let mut hex_hash = String::with_capacity(64);
+    for byte in hash_result {
+        let _ = write!(&mut hex_hash, "{byte:02x}");
+    }
+
+    valid_keys.contains(&hex_hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_is_api_key_valid() {
+        let mut valid_keys = HashSet::new();
+        // hash of "nf_test_key_123"
+        let key_str = "nf_test_key_123";
+        let mut hasher = Sha256::new();
+        hasher.update(key_str.as_bytes());
+        let hash_result = hasher.finalize();
+        let mut hex_hash = String::with_capacity(64);
+        for byte in hash_result {
+            let _ = write!(&mut hex_hash, "{byte:02x}");
+        }
+        valid_keys.insert(hex_hash);
+
+        assert!(is_api_key_valid(key_str, &valid_keys));
+        assert!(!is_api_key_valid("wrong_key", &valid_keys));
+        assert!(!is_api_key_valid("", &valid_keys));
     }
 }

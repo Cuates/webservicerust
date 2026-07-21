@@ -13,7 +13,7 @@ A high-performance, strongly-typed Newsfeed API written in Rust. This project re
 
 ## Overview
 
-The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides O(1) API key authentication, token-bucket rate limiting, highly optimized database connection pooling, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds.
+The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides timing-attack resistant `SHA-256` API key authentication, IP-based token-bucket rate limiting, highly optimized database connection pooling (including tuned `bb8` pools), strict 500-item batch processing limits, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds (currently verified at 99.54%).
 
 ## Architecture
 
