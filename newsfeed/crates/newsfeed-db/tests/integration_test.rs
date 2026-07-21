@@ -302,26 +302,30 @@ async fn test_mssql_integration() {
     config.authentication(AuthMethod::sql_server("SA", "Password123!"));
     config.trust_cert();
 
-    let mut retries = 10;
-    let mut tcp_res = None;
+    let mut retries = 20;
+    let mut client_res = None;
     while retries > 0 {
         match TcpStream::connect(config.get_addr()).await {
             Ok(tcp) => {
-                tcp_res = Some(tcp);
-                break;
+                tcp.set_nodelay(true).unwrap();
+                match Client::connect(config.clone(), tcp.compat_write()).await {
+                    Ok(client) => {
+                        client_res = Some(client);
+                        break;
+                    }
+                    Err(e) => {
+                        println!("MSSQL TDS not ready yet, retrying... ({})", e);
+                    }
+                }
             }
             Err(e) => {
-                println!("MSSQL not ready yet, retrying... ({})", e);
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                retries -= 1;
+                println!("MSSQL TCP not ready yet, retrying... ({})", e);
             }
         }
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        retries -= 1;
     }
-    let tcp = tcp_res.expect("Failed to connect to mssql tcp after retries");
-    tcp.set_nodelay(true).unwrap();
-    let mut client = Client::connect(config, tcp.compat_write())
-        .await
-        .expect("Failed to connect to mssql");
+    let mut client = client_res.expect("Failed to connect to mssql after retries");
 
     execute_mssql_script(
         &mut client,
