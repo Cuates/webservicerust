@@ -42,7 +42,7 @@ The service enforces strict configuration validation at startup. If it fails to 
 
 - **Issue**: You send a payload and receive a JSON error mentioning "Unsupported Media Type" or syntax errors.
 - **Solution**: 
-  - Ensure you are sending the `Content-Type: application/json` header.
+  - Ensure you are sending the `Content-Type: application/json; charset=utf-8` header. The payload validator is extremely strict and requires the charset to be explicitly defined.
   - Verify your JSON payload is perfectly formatted and does not exceed the strict **500-item batch limit** for bulk operations.
   - Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
 
@@ -60,6 +60,6 @@ The service enforces strict configuration validation at startup. If it fails to 
 
 - **Issue**: `cargo make test-coverage` or the CI pipeline fails with `Error: coverage is below the required threshold`.
 - **Solution**: 
-  - We enforce strict code coverage thresholds across the workspace (99%).
+  - We enforce strict code coverage thresholds across the workspace (>99% line and function coverage).
   - The coverage table will print at the bottom of the test run to highlight exactly which files are missing coverage.
   - You must write unit tests (in the respective crate) or integration tests (in `newsfeed-server/tests/integration_test.rs`) to bump the coverage above the thresholds before committing.

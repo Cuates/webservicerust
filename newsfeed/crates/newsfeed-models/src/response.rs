@@ -3,6 +3,16 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
+/// Represents a single item that failed during a batch operation.
+#[derive(Debug, Serialize, ToSchema, Clone)]
+pub struct FailedItem {
+    #[serde(rename = "Item")]
+    pub item: serde_json::Value,
+
+    #[serde(rename = "Reason")]
+    pub reason: String,
+}
+
 /// Generic API response envelope matching the Python reference format.
 ///
 /// All endpoints return this structure.  Field names use PascalCase in JSON
@@ -26,6 +36,9 @@ pub struct ApiResponse<T: Serialize> {
 
     #[serde(rename = "Result")]
     pub result: Vec<T>,
+
+    #[serde(rename = "FailedItems", skip_serializing_if = "Vec::is_empty", default)]
+    pub failed_items: Vec<FailedItem>,
 }
 
 impl<T: Serialize> ApiResponse<T> {
@@ -38,6 +51,7 @@ impl<T: Serialize> ApiResponse<T> {
             message: message.into(),
             count,
             result,
+            failed_items: vec![],
         }
     }
 
@@ -52,6 +66,7 @@ impl<T: Serialize> ApiResponse<T> {
             message: message.into(),
             count: 0,
             result: vec![],
+            failed_items: vec![],
         }
     }
 
@@ -66,7 +81,14 @@ impl<T: Serialize> ApiResponse<T> {
             message: message.into(),
             count: 0,
             result: vec![],
+            failed_items: vec![],
         }
+    }
+
+    /// Attach failed items to the response (for partial success/failure).
+    pub fn with_failed_items(mut self, failed: Vec<FailedItem>) -> Self {
+        self.failed_items = failed;
+        self
     }
 }
 
@@ -117,5 +139,19 @@ mod tests {
         assert_eq!(serialized["Code"], "VALIDATION_ERROR");
         assert_eq!(serialized["Message"], "title is required");
         assert_eq!(serialized["Count"], 0);
+        assert!(serialized.get("FailedItems").is_none()); // should be skipped when empty
+    }
+
+    #[test]
+    fn test_failed_items_inclusion() {
+        let resp = ApiResponse::<serde_json::Value>::error("partial fail").with_failed_items(vec![
+            FailedItem {
+                item: json!({"id": 1}),
+                reason: "duplicate".to_owned(),
+            },
+        ]);
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert!(serialized.get("FailedItems").is_some());
+        assert_eq!(serialized["FailedItems"][0]["Reason"], "duplicate");
     }
 }

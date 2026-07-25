@@ -33,8 +33,9 @@ pub async fn extract_feed(
     query.bind(params.image_url.as_deref());
     query.bind(params.feed_url.as_deref());
     query.bind(params.actual_url.as_deref());
-    query.bind(params.limit.as_deref());
-    query.bind(params.sort.as_deref());
+    let limit_str = params.limit.map(|l| l.to_string());
+    query.bind(limit_str);
+    query.bind(params.sort.as_ref().map(|s| s.as_str()));
 
     let stream = query.query(&mut *client).await?;
     let rows = stream.into_first_result().await?;
@@ -64,69 +65,125 @@ pub async fn extract_feed(
 pub async fn cud_feed(
     pool: &MssqlPool,
     option_mode: OptionMode,
-    params: &CudParams,
+    params: &[CudParams],
 ) -> Result<Vec<Value>, DbError> {
-    let mut client = pool.get().await?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(|e| DbError::MssqlPool(e.to_string()))?;
+    let payload = serde_json::to_string(params).map_err(DbError::Json)?;
 
-    let mut query = Query::new(
-        "EXEC dbo.insertupdatedeleteNewsFeed \
-         @optionMode = @P1, @title = @P2, @imageurl = @P3, \
-         @feedurl = @P4, @actualurl = @P5, @publishdate = @P6",
-    );
+    let mut query = tiberius::Query::new("EXEC cud_bulk_json_newsfeed @P1, @P2");
     query.bind(option_mode.as_str());
-    query.bind(params.title.as_deref());
-    query.bind(params.image_url.as_deref());
-    query.bind(params.feed_url.as_deref());
-    query.bind(params.actual_url.as_deref());
-    query.bind(params.publish_date.as_deref());
+    query.bind(payload);
 
-    let stream = query.query(&mut *client).await?;
-    let rows = stream.into_first_result().await?;
+    let stream = query.query(&mut conn).await?;
+    let tiberius_rows = stream.into_first_result().await?;
 
-    let mut results = Vec::with_capacity(rows.len());
-    for row in rows {
-        let json_str = row.get::<&str, _>("status").ok_or(DbError::EmptyResult)?;
-        let parsed = parse_status_json(json_str)?;
-        results.push(parsed);
+    let mut rows: Vec<(Option<String>,)> = Vec::with_capacity(tiberius_rows.len());
+    for row in tiberius_rows {
+        let status: Option<&str> = row.get(0);
+        rows.push((status.map(|s| s.to_string()),));
     }
-    Ok(results)
+
+    parse_status_rows(rows)
 }
 
-fn parse_status_json(json_str: &str) -> Result<Value, DbError> {
-    let parsed: Value = serde_json::from_str(json_str)?;
-    if parsed.get("Status").and_then(Value::as_str) == Some("Error") {
-        return Err(DbError::ProcedureFailed(json_str.to_string()));
+fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError> {
+    let mut results = Vec::new();
+    for (status_json,) in rows {
+        let json_str = status_json.ok_or(DbError::EmptyResult)?;
+        let parsed: Value = serde_json::from_str(&json_str)?;
+
+        if let Value::Array(arr) = parsed {
+            results.extend(arr);
+        } else {
+            results.push(parsed);
+        }
     }
-    Ok(parsed)
+    Ok(results)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn test_parse_status_json_ok() {
-        let json_str = r#"{"Status":"Success","Message":"Record(s) updated"}"#;
-        let parsed = parse_status_json(json_str).unwrap();
-        assert_eq!(
-            parsed,
-            json!({"Status": "Success", "Message": "Record(s) updated"})
-        );
+    fn test_parse_status_rows_ok() {
+        let rows = vec![(Some(r#"{"Status":"Success"}"#.to_string()),)];
+        let res = parse_status_rows(rows).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0]["Status"], "Success");
     }
 
     #[test]
-    fn test_parse_status_json_invalid_json() {
-        let json_str = r#"{"Status":"Success""#; // malformed
-        assert!(matches!(parse_status_json(json_str), Err(DbError::Json(_))));
+    fn test_parse_status_rows_array() {
+        let rows = vec![(Some(
+            r#"[{"Status":"Success"},{"Status":"Error"}]"#.to_string(),
+        ),)];
+        let res = parse_status_rows(rows).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0]["Status"], "Success");
+        assert_eq!(res[1]["Status"], "Error");
     }
 
     #[test]
-    fn test_parse_status_json_procedure_failed() {
-        let json_str = r#"{"Status":"Error","Message":"Invalid optionMode"}"#;
-        assert!(matches!(
-            parse_status_json(json_str),
-            Err(DbError::ProcedureFailed(_))
-        ));
+    fn test_parse_status_rows_empty_result() {
+        let rows = vec![(None,)];
+
+        assert!(matches!(parse_status_rows(rows), Err(DbError::EmptyResult)));
+    }
+
+    #[test]
+    fn test_parse_status_rows_invalid_json() {
+        let rows = vec![(Some("not json".to_string()),)];
+        assert!(matches!(parse_status_rows(rows), Err(DbError::Json(_))));
+    }
+
+    #[tokio::test]
+    async fn test_mssql_extract_error() {
+        let mut cfg = tiberius::Config::new();
+        cfg.host("127.0.0.2"); // non-routable
+        cfg.port(1);
+        cfg.authentication(tiberius::AuthMethod::sql_server("fake", "fake"));
+        cfg.encryption(tiberius::EncryptionLevel::NotSupported);
+
+        let mgr = bb8_tiberius::ConnectionManager::new(cfg);
+        let pool = bb8::Pool::builder().build_unchecked(mgr);
+
+        let params = ExtractParams {
+            title: None,
+            image_url: None,
+            feed_url: None,
+            actual_url: None,
+            limit: Some(10),
+            sort: Some(newsfeed_models::feed::SortOrder::Asc),
+        };
+
+        let res = extract_feed(&pool, &params).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mssql_cud_error() {
+        let mut cfg = tiberius::Config::new();
+        cfg.host("127.0.0.2"); // non-routable
+        cfg.port(1);
+        cfg.authentication(tiberius::AuthMethod::sql_server("fake", "fake"));
+        cfg.encryption(tiberius::EncryptionLevel::NotSupported);
+
+        let mgr = bb8_tiberius::ConnectionManager::new(cfg);
+        let pool = bb8::Pool::builder().build_unchecked(mgr);
+
+        let params = CudParams {
+            title: None,
+            image_url: None,
+            feed_url: None,
+            actual_url: None,
+            publish_date: None,
+        };
+
+        let res = cud_feed(&pool, OptionMode::InsertFeed, &[params]).await;
+        assert!(res.is_err());
     }
 }

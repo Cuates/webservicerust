@@ -45,7 +45,7 @@ pub async fn api_key_middleware(
 
     if is_valid {
         // Audit log: first 6 chars only — never the full key.
-        let preview = &provided_key[..provided_key.len().min(6)];
+        let preview: String = provided_key.chars().take(6).collect();
         tracing::debug!(key_prefix = %preview, "API key validated");
         next.run(req).await
     } else {

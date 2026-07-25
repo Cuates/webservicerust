@@ -49,10 +49,10 @@ To build and test the workspace locally without Docker, we use `cargo-make` shor
 # Check compilation across all workspace crates
 cargo make check
 
-# Run the test suite (testcontainers will automatically provision ephemeral databases for you!)
+# Run the test suite (testcontainers will automatically provision ephemeral PostgreSQL, MariaDB, and MSSQL databases for you!)
 cargo make test
 
-# Run the test suite and enforce strict code coverage thresholds (99%)
+# Run the test suite and enforce strict code coverage thresholds (>99% line and function coverage)
 cargo make test-coverage
 
 # Run the server binary directly

@@ -4,6 +4,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::{IntoParams, ToSchema};
 
+/// Order in which to sort the results.
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl SortOrder {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SortOrder::Asc => "asc",
+            SortOrder::Desc => "desc",
+        }
+    }
+}
+
 // ── Extract (read) operation parameters ──────────────────────────────────────
 
 /// Parameters passed to the extract stored procedure / function.
@@ -14,8 +31,8 @@ pub struct ExtractParams {
     pub image_url: Option<String>,
     pub feed_url: Option<String>,
     pub actual_url: Option<String>,
-    pub limit: Option<String>,
-    pub sort: Option<String>,
+    pub limit: Option<u32>,
+    pub sort: Option<SortOrder>,
 }
 
 impl ExtractParams {
@@ -26,8 +43,14 @@ impl ExtractParams {
             image_url: map.get("image_url").cloned(),
             feed_url: map.get("feed_url").cloned(),
             actual_url: map.get("actual_url").cloned(),
-            limit: map.get("limit").cloned(),
-            sort: map.get("sort").cloned(),
+            limit: map.get("limit").and_then(|s| s.parse::<u32>().ok()),
+            sort: map
+                .get("sort")
+                .and_then(|s| match s.to_lowercase().as_str() {
+                    "asc" => Some(SortOrder::Asc),
+                    "desc" => Some(SortOrder::Desc),
+                    _ => None,
+                }),
         }
     }
 }
@@ -35,7 +58,7 @@ impl ExtractParams {
 // ── Create / Update / Delete operation parameters ─────────────────────────────
 
 /// Parameters passed to the insert/update/delete stored procedure.
-#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CudParams {
     pub title: Option<String>,
@@ -77,8 +100,33 @@ mod tests {
 
         let params = ExtractParams::from_map(&map);
         assert_eq!(params.title.as_deref(), Some("Test Title"));
-        assert_eq!(params.limit.as_deref(), Some("10"));
+        assert_eq!(params.limit, Some(10));
         assert_eq!(params.image_url, None);
+        assert_eq!(params.sort, None);
+
+        let mut map2 = HashMap::new();
+        map2.insert("sort".to_string(), "asc".to_string());
+        map2.insert("feed_url".to_string(), "http://foo".to_string());
+        let params2 = ExtractParams::from_map(&map2);
+        assert_eq!(params2.sort, Some(SortOrder::Asc));
+        assert_eq!(params2.feed_url.as_deref(), Some("http://foo"));
+
+        let mut map3 = HashMap::new();
+        map3.insert("sort".to_string(), "desc".to_string());
+        map3.insert("actual_url".to_string(), "http://bar".to_string());
+        let params3 = ExtractParams::from_map(&map3);
+        assert_eq!(params3.sort, Some(SortOrder::Desc));
+        assert_eq!(params3.actual_url.as_deref(), Some("http://bar"));
+
+        let mut map4 = HashMap::new();
+        map4.insert("sort".to_string(), "invalid".to_string());
+        let params4 = ExtractParams::from_map(&map4);
+        assert_eq!(params4.sort, None);
+
+        let asc_str = SortOrder::Asc.as_str();
+        assert_eq!(asc_str, "asc");
+        let desc_str = SortOrder::Desc.as_str();
+        assert_eq!(desc_str, "desc");
     }
 
     #[test]

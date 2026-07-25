@@ -6,6 +6,8 @@
 [![Rust](https://img.shields.io/badge/Rust-1.97+-black?logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.8-red)](https://github.com/tokio-rs/axum)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![MariaDB](https://img.shields.io/badge/MariaDB-003545?logo=mariadb&logoColor=white)](https://mariadb.org/)
+[![MSSQL](https://img.shields.io/badge/MSSQL-CC2927?logo=microsoftsqlserver&logoColor=white)](https://www.microsoft.com/en-us/sql-server)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -13,7 +15,7 @@ A high-performance, strongly-typed Newsfeed API written in Rust. This project re
 
 ## Overview
 
-The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides timing-attack resistant `SHA-256` API key authentication, IP-based token-bucket rate limiting, highly optimized database connection pooling (including tuned `bb8` pools), strict 500-item batch processing limits, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds (currently verified at 99.54%).
+The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides timing-attack resistant `SHA-256` API key authentication, IP-based token-bucket rate limiting, highly optimized database connection pooling (including tuned `bb8` pools), strict 500-item batch processing limits, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds (currently verified at >99%).
 
 ## Architecture
 

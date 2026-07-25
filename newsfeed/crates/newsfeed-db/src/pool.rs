@@ -1,7 +1,7 @@
 //! `AppState` and `DbPool` — shared application state injected into every
 //! Axum handler via `State<Arc<AppState>>`.
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool, time::Duration};
 
 use newsfeed_config::{AppConfig, DatabaseConfig, DatabaseTarget};
 
@@ -18,7 +18,7 @@ pub type MssqlPool = bb8::Pool<bb8_tiberius::ConnectionManager>;
 pub enum DbPool {
     Postgres(sqlx::PgPool),
     MariaDb(sqlx::MySqlPool),
-    MsSql(Arc<MssqlPool>),
+    MsSql(MssqlPool),
 }
 
 impl DbPool {
@@ -62,6 +62,9 @@ pub struct AppState {
 
     /// Concurrency cap for batch CUD operations (`BATCH_CONCURRENCY_LIMIT`).
     pub batch_concurrency_limit: usize,
+
+    /// Cached database health status for zero-overhead /health probes.
+    pub is_healthy: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -174,6 +177,7 @@ impl AppState {
                 let mgr = bb8_tiberius::ConnectionManager::new(tib_cfg);
                 let pool = bb8::Pool::builder()
                     .max_size(db_cfg.db_pool_max)
+                    .min_idle(Some(db_cfg.db_pool_min))
                     .connection_timeout(acquire_timeout)
                     .idle_timeout(Some(Duration::from_secs(300)))
                     .max_lifetime(Some(Duration::from_secs(1800)))
@@ -185,7 +189,7 @@ impl AppState {
                     max_connections = db_cfg.db_pool_max,
                     "Connected to MSSQL via bb8-tiberius pool"
                 );
-                DbPool::MsSql(Arc::new(pool))
+                DbPool::MsSql(pool)
             }
         };
 
@@ -193,6 +197,7 @@ impl AppState {
             db,
             api_keys,
             batch_concurrency_limit: app_cfg.batch_concurrency_limit,
+            is_healthy: Arc::new(AtomicBool::new(true)),
         })
     }
 }
@@ -207,13 +212,15 @@ mod tests {
     fn postgres_app_cfg(api_keys: &str) -> AppConfig {
         AppConfig {
             bind_host: "127.0.0.1".to_string(),
-            app_port: 4815,
-            rust_log: "error".to_string(),
+            app_port: 8080,
+            rust_log: "info".to_string(),
             api_keys: api_keys.to_string(),
-            allowed_origins: "http://localhost".to_string(),
+            allowed_origins: "*".to_string(),
             rate_limit_rps: 10,
-            rate_limit_burst: 10,
+            rate_limit_burst: 20,
             batch_concurrency_limit: 5,
+            trust_proxy: false,
+            trusted_proxy_cidr: None,
         }
     }
 
@@ -296,7 +303,7 @@ mod tests {
         let mgr = bb8_tiberius::ConnectionManager::new(cfg);
         let pool = bb8::Pool::builder().build_unchecked(mgr);
 
-        let db_pool = DbPool::MsSql(Arc::new(pool));
+        let db_pool = DbPool::MsSql(pool);
         let result = db_pool.ping().await;
         assert!(result.is_err(), "expected ping error from fake MSSQL pool");
     }
@@ -413,8 +420,8 @@ mod tests {
         db_cfg.db_acquire_timeout_secs = 1;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        // bb8 creates the pool lazily, so building the pool succeeds even if it can't connect.
-        assert!(result.is_ok());
+        // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -434,8 +441,8 @@ mod tests {
         db_cfg.db_acquire_timeout_secs = 1;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        // bb8 creates the pool lazily, so building the pool succeeds even if it can't connect.
-        assert!(result.is_ok());
+        // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
+        assert!(result.is_err());
     }
     #[tokio::test]
     async fn test_pool_close() {
@@ -456,7 +463,7 @@ mod tests {
 
         let bb8_mgr = bb8_tiberius::ConnectionManager::build(tiberius::Config::new()).unwrap();
         let ms_pool = bb8::Pool::builder().build_unchecked(bb8_mgr);
-        let db_ms = DbPool::MsSql(Arc::new(ms_pool));
+        let db_ms = DbPool::MsSql(ms_pool);
         db_ms.close().await;
     }
 }

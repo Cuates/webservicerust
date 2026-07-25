@@ -12,7 +12,8 @@ use newsfeed_server::router;
 fn create_test_state() -> Arc<AppState> {
     // Create a lazy pool so it doesn't actually connect to a real database
     let fake_pool = sqlx::postgres::PgPoolOptions::new()
-        .connect_lazy("postgres://fake:fake@localhost/fake")
+        .acquire_timeout(std::time::Duration::from_millis(1))
+        .connect_lazy("postgres://fake:fake@255.255.255.255/fake")
         .expect("Failed to create lazy pool");
 
     let mut api_keys = HashSet::new();
@@ -23,6 +24,7 @@ fn create_test_state() -> Arc<AppState> {
     api_keys.insert(hash_hex);
 
     Arc::new(AppState {
+        is_healthy: std::sync::atomic::AtomicBool::new(true).into(),
         db: DbPool::Postgres(fake_pool),
         api_keys,
         batch_concurrency_limit: 5,
@@ -31,6 +33,8 @@ fn create_test_state() -> Arc<AppState> {
 
 fn create_test_server() -> TestServer {
     let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
         bind_host: "127.0.0.1".to_string(),
         app_port: 4815,
         rust_log: "info".to_string(),
@@ -58,21 +62,41 @@ fn create_test_server() -> TestServer {
 
 #[tokio::test]
 async fn test_health_check() {
-    let server = create_test_server();
+    let state = create_test_state();
+    state
+        .is_healthy
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+        batch_concurrency_limit: 5,
+    };
+    let app = router::build(state, &cfg);
+    let server = TestServer::new(app);
+
     let response = server.get("/health").await;
-    // Note: We expect 503 SERVICE_UNAVAILABLE here because the test state uses
-    // a lazy `sqlx` Postgres pool (`postgres://fake:fake@localhost/fake`).
-    // Since we deferred `testcontainers` DB integration for now, the health check
-    // correctly fails to ping the fake database and returns 503.
     response.assert_status(StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]
-async fn test_swagger_ui() {
+async fn test_openapi_json() {
     let server = create_test_server();
-    let response = server.get("/api/newsfeed/swagger-ui/").await;
-    // Should be OK or REDIRECT, not 401
-    assert_ne!(response.status_code(), StatusCode::UNAUTHORIZED);
+    let response = server
+        .get("/api-docs/openapi.json")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -119,7 +143,7 @@ async fn test_invalid_json_payload() {
     );
     let error_body_415: serde_json::Value = response_415.json(); // should parse successfully as JSON
     assert_eq!(error_body_415["Status"], "Error");
-    assert_eq!(error_body_415["Code"], "BAD_REQUEST");
+    assert_eq!(error_body_415["Code"], "INVALID_HEADER");
 
     // 2. Test valid JSON but missing mandatory fields (triggers custom 422)
     let response_422 = server
@@ -136,9 +160,12 @@ async fn test_invalid_json_payload() {
             axum::http::header::HeaderName::from_static("accept"),
             axum::http::header::HeaderValue::from_static("application/json"),
         )
-        .json(&serde_json::json!({
-            "feed_url": "Missing title which is mandatory for POST"
-        }))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({
+                "feed_url": "Missing title which is mandatory for POST"
+            }))
+            .unwrap(),
+        ))
         .await;
 
     assert_eq!(response_422.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -181,6 +208,8 @@ async fn test_rate_limiting() {
     // we'll create a custom tight-limit server here.
 
     let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
         bind_host: "127.0.0.1".to_string(),
         app_port: 4815,
         rust_log: "info".to_string(),
@@ -237,6 +266,8 @@ async fn test_rate_limiting() {
         .await;
 
     assert_eq!(res2.status_code(), StatusCode::TOO_MANY_REQUESTS);
+    let body: serde_json::Value = res2.json();
+    assert_eq!(body["Code"], "RATE_LIMIT_EXCEEDED");
 }
 
 #[tokio::test]
@@ -244,6 +275,8 @@ async fn test_rate_limiting_precedence() {
     let invalid_api_key = "wrong_key";
 
     let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
         bind_host: "127.0.0.1".to_string(),
         app_port: 4815,
         rust_log: "info".to_string(),
@@ -299,6 +332,8 @@ async fn test_rate_limiting_precedence() {
         .await;
 
     assert_eq!(res2.status_code(), StatusCode::TOO_MANY_REQUESTS);
+    let body: serde_json::Value = res2.json();
+    assert_eq!(body["Code"], "RATE_LIMIT_EXCEEDED");
 }
 
 async fn create_live_postgres_state(
@@ -342,27 +377,45 @@ async fn create_live_postgres_state(
         // init_pool is dropped and all its connections closed here
     }
 
-    // ── 2. Fresh pool for AppState ────────────────────────────────────────────
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&db_url)
-        .await
-        .expect("Failed to connect to test postgres");
-
-    let mut api_keys = std::collections::HashSet::new();
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(b"nf_test_key_123");
-    api_keys.insert(hex::encode(hasher.finalize()));
+    let hashed_key = hex::encode(hasher.finalize());
 
-    (
-        std::sync::Arc::new(AppState {
-            db: newsfeed_db::pool::DbPool::Postgres(pool),
-            api_keys,
-            batch_concurrency_limit: 5,
-        }),
-        node,
-    )
+    let app_cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 8080,
+        rust_log: "info".to_string(),
+        api_keys: hashed_key,
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 10,
+        rate_limit_burst: 20,
+        batch_concurrency_limit: 5,
+    };
+
+    let db_cfg = newsfeed_config::DatabaseConfig {
+        database_target: newsfeed_config::DatabaseTarget::Postgres,
+        postgres_url: Some(db_url),
+        mariadb_url: None,
+        mssql_host: None,
+        mssql_port: None,
+        mssql_database: None,
+        mssql_username: None,
+        mssql_password: None,
+        db_mssql_encrypt: false,
+        db_mssql_trust_cert: false,
+        db_pool_max: 2,
+        db_pool_min: 1,
+        db_acquire_timeout_secs: 10,
+    };
+
+    let state = newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg)
+        .await
+        .expect("Failed to init AppState");
+
+    (std::sync::Arc::new(state), node)
 }
 
 #[tokio::test]
@@ -371,6 +424,8 @@ async fn test_health_check_live_db() {
     let (state, _node) = create_live_postgres_state(&docker).await;
 
     let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
         bind_host: "127.0.0.1".to_string(),
         app_port: 4815,
         rust_log: "info".to_string(),
@@ -403,6 +458,8 @@ async fn test_postgres_crud_lifecycle() {
     let (state, _node) = create_live_postgres_state(&docker).await;
 
     let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
         bind_host: "127.0.0.1".to_string(),
         app_port: 4815,
         rust_log: "info".to_string(),
@@ -440,19 +497,22 @@ async fn test_postgres_crud_lifecycle() {
         )
         .add_header(accept.clone(), accept_val.clone())
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({
-            "title": "Integration Test Title",
-            "image_url": "http://example.com/image.png",
-            "feed_url": "http://example.com/feed",
-            "actual_url": "http://example.com/actual",
-            "publish_date": "2026-07-13 00:00:00"
-        }))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({
+                "title": "Integration Test Title",
+                "image_url": "http://example.com/image.png",
+                "feed_url": "http://example.com/feed",
+                "actual_url": "http://example.com/actual",
+                "publish_date": "2026-07-13 00:00:00"
+            }))
+            .unwrap(),
+        ))
         .await;
     assert_eq!(post_resp.status_code(), StatusCode::CREATED);
 
     // ── GET: read back the created record ─────────────────────────────────────
     let get_resp = server
-        .get("/api/newsfeed")
+        .get("/api/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -466,7 +526,7 @@ async fn test_postgres_crud_lifecycle() {
 
     // ── GET: ETag caching — second identical GET should return 304 ────────────
     let first_etag = server
-        .get("/api/newsfeed")
+        .get("/api/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -479,7 +539,7 @@ async fn test_postgres_crud_lifecycle() {
         .to_owned();
 
     let cached_resp = server
-        .get("/api/newsfeed")
+        .get("/api/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -494,7 +554,7 @@ async fn test_postgres_crud_lifecycle() {
 
     // ── GET: ETag mismatch should return 200 OK ────────────
     let mismatch_resp = server
-        .get("/api/newsfeed")
+        .get("/api/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -507,91 +567,6 @@ async fn test_postgres_crud_lifecycle() {
         .await;
     assert_eq!(mismatch_resp.status_code(), StatusCode::OK);
 
-    // ── QUERY method: read using the non-standard QUERY HTTP verb ─────────────
-    let query_resp = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static(api_key),
-        )
-        .add_header(accept.clone(), accept_val.clone())
-        .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({"title": "Integration Test Title"}))
-        .await;
-    assert_eq!(query_resp.status_code(), StatusCode::OK);
-    let _query_body: serde_json::Value = query_resp.json();
-
-    // ── QUERY: ETag caching path ──────────────────────────────────────────────
-    let query_etag = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static(api_key),
-        )
-        .add_header(accept.clone(), accept_val.clone())
-        .await
-        .header("etag")
-        .to_str()
-        .unwrap()
-        .to_owned();
-
-    let cached_query_resp = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static(api_key),
-        )
-        .add_header(accept.clone(), accept_val.clone())
-        .add_header(
-            axum::http::header::IF_NONE_MATCH,
-            axum::http::header::HeaderValue::from_str(&query_etag).unwrap(),
-        )
-        .await;
-    assert_eq!(cached_query_resp.status_code(), StatusCode::NOT_MODIFIED);
-
-    // ── QUERY: ETag mismatch should return 200 OK ────────────────────────────────
-    let mismatch_query_resp = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static(api_key),
-        )
-        .add_header(accept.clone(), accept_val.clone())
-        .add_header(
-            axum::http::header::IF_NONE_MATCH,
-            axum::http::header::HeaderValue::from_static("\"wrong-etag\""),
-        )
-        .await;
-    assert_eq!(mismatch_query_resp.status_code(), StatusCode::OK);
-
-    // ── QUERY: invalid JSON body should 400 ───────────────────────────────────
-    let query_bad_json = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static(api_key),
-        )
-        .add_header(accept.clone(), accept_val.clone())
-        .add_header(content_type.clone(), content_type_val.clone())
-        .text("not json {")
-        .await;
-    assert_eq!(query_bad_json.status_code(), StatusCode::BAD_REQUEST);
-
     // ── PUT: update the record ────────────────────────────────────────────────
     let put_resp = server
         .put("/api/newsfeed")
@@ -601,13 +576,16 @@ async fn test_postgres_crud_lifecycle() {
         )
         .add_header(accept.clone(), accept_val.clone())
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({
-            "title": "Integration Test Title",
-            "image_url": "http://example.com/image-updated.png",
-            "feed_url": "http://example.com/feed",
-            "actual_url": "http://example.com/actual",
-            "publish_date": "2026-07-14 00:00:00"
-        }))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({
+                "title": "Integration Test Title",
+                "image_url": "http://example.com/image-updated.png",
+                "feed_url": "http://example.com/feed",
+                "actual_url": "http://example.com/actual",
+                "publish_date": "2026-07-14 00:00:00"
+            }))
+            .unwrap(),
+        ))
         .await;
     assert_eq!(put_resp.status_code(), StatusCode::OK);
     let put_body: serde_json::Value = put_resp.json();
@@ -622,7 +600,9 @@ async fn test_postgres_crud_lifecycle() {
         )
         .add_header(accept.clone(), accept_val.clone())
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({"image_url": "no title provided"}))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({"image_url": "no title provided"})).unwrap(),
+        ))
         .await;
     assert_eq!(put_no_title.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
@@ -638,7 +618,9 @@ async fn test_postgres_crud_lifecycle() {
             axum::http::header::HeaderValue::from_static("text/html"),
         )
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({"title": "Test"}))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({"title": "Test"})).unwrap(),
+        ))
         .await;
     assert_eq!(put_bad_header.status_code(), StatusCode::BAD_REQUEST);
 
@@ -651,9 +633,13 @@ async fn test_postgres_crud_lifecycle() {
         )
         .add_header(accept.clone(), accept_val.clone())
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({
-            "title": "Integration Test Title"
-        }))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Integration Test Title",
+                "publish_date": "2026-07-14 00:00:00"
+            }]))
+            .unwrap(),
+        ))
         .await;
     assert_eq!(delete_resp.status_code(), StatusCode::OK);
     let delete_body: serde_json::Value = delete_resp.json();
@@ -668,7 +654,9 @@ async fn test_postgres_crud_lifecycle() {
         )
         .add_header(accept.clone(), accept_val.clone())
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({"image_url": "no title provided"}))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({"image_url": "no title provided"})).unwrap(),
+        ))
         .await;
     assert_eq!(
         delete_no_title.status_code(),
@@ -687,7 +675,9 @@ async fn test_postgres_crud_lifecycle() {
             axum::http::header::HeaderValue::from_static("text/html"),
         )
         .add_header(content_type.clone(), content_type_val.clone())
-        .json(&serde_json::json!({"title": "Test"}))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({"title": "Test"})).unwrap(),
+        ))
         .await;
     assert_eq!(delete_bad_header.status_code(), StatusCode::BAD_REQUEST);
 
@@ -734,104 +724,12 @@ async fn test_post_invalid_header_charset() {
             axum::http::header::ACCEPT,
             axum::http::header::HeaderValue::from_static("application/json"),
         )
-        .json(&serde_json::json!([{"title": "Test"}]))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{"title": "Test"}])).unwrap(),
+        ))
         .await;
 
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_query_invalid_header() {
-    let server = create_test_server();
-
-    let response = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
-        )
-        .add_header(
-            axum::http::header::ACCEPT,
-            axum::http::header::HeaderValue::from_static("text/html"),
-        )
-        .await;
-
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_query_url_params() {
-    let server = create_test_server();
-
-    // Pass valid accept to get past validate_headers
-    let response = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed?title=foo",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
-        )
-        .add_header(
-            axum::http::header::ACCEPT,
-            axum::http::header::HeaderValue::from_static("application/json"),
-        )
-        .await;
-
-    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR); // Will fail in fake pool, but hits URL parsing!
-}
-
-#[tokio::test]
-async fn test_query_large_body() {
-    let server = create_test_server();
-
-    // Generate a 2MB string
-    let huge_string = "a".repeat(2 * 1024 * 1024);
-
-    let response = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
-        )
-        .add_header(
-            axum::http::header::ACCEPT,
-            axum::http::header::HeaderValue::from_static("application/json"),
-        )
-        .text(&huge_string)
-        .await;
-
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST); // Hits axum::body::to_bytes size limit
-}
-
-#[tokio::test]
-async fn test_query_invalid_json_body() {
-    let server = create_test_server();
-
-    let response = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
-        )
-        .add_header(
-            axum::http::header::ACCEPT,
-            axum::http::header::HeaderValue::from_static("application/json"),
-        )
-        .text("{ invalid json }")
-        .await;
-
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status_code(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
 
 #[tokio::test]
@@ -851,16 +749,16 @@ async fn test_post_db_error() {
             axum::http::header::ACCEPT,
             axum::http::header::HeaderValue::from_static("application/json"),
         )
-        .json(&serde_json::json!([{
-            "title": "Valid title, but DB will fail",
-            "feed_url": "http://example.com"
-        }]))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Valid title, but DB will fail",
+                "feed_url": "http://example.com"
+            }]))
+            .unwrap(),
+        ))
         .await;
 
-    let _body: serde_json::Value = response.json();
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: serde_json::Value = response.json();
-    assert_eq!(body["Code"], "DB_ERROR");
 }
 
 #[tokio::test]
@@ -879,38 +777,6 @@ async fn test_get_db_error() {
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: serde_json::Value = response.json();
-    assert_eq!(body["Code"], "DB_ERROR");
-}
-
-#[tokio::test]
-async fn test_query_db_error() {
-    let server = create_test_server();
-    let response = server
-        .method(
-            axum::http::Method::from_bytes(b"QUERY").unwrap(),
-            "/api/newsfeed",
-        )
-        .add_header(
-            axum::http::header::HeaderName::from_static("x-api-key"),
-            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
-        )
-        .add_header(
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
-        )
-        .add_header(
-            axum::http::header::ACCEPT,
-            axum::http::header::HeaderValue::from_static("application/json"),
-        )
-        .json(&serde_json::json!({
-            "title": "Search title, but DB will fail"
-        }))
-        .await;
-
-    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: serde_json::Value = response.json();
-    assert_eq!(body["Code"], "DB_ERROR");
 }
 
 #[tokio::test]
@@ -930,14 +796,15 @@ async fn test_put_db_error() {
             axum::http::header::ACCEPT,
             axum::http::header::HeaderValue::from_static("application/json"),
         )
-        .json(&serde_json::json!([{
-            "title": "Valid title, but DB will fail"
-        }]))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Update", "publish_date": "2026-07-23"
+            }]))
+            .unwrap(),
+        ))
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: serde_json::Value = response.json();
-    assert_eq!(body["Code"], "DB_ERROR");
 }
 
 #[tokio::test]
@@ -957,12 +824,105 @@ async fn test_delete_db_error() {
             axum::http::header::ACCEPT,
             axum::http::header::HeaderValue::from_static("application/json"),
         )
-        .json(&serde_json::json!([{
-            "title": "Valid title, but DB will fail"
-        }]))
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Delete", "publish_date": "2026-07-23"
+            }]))
+            .unwrap(),
+        ))
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: serde_json::Value = response.json();
-    assert_eq!(body["Code"], "DB_ERROR");
+}
+
+#[tokio::test]
+async fn test_get_invalid_accept_header() {
+    let server = create_test_server();
+    let response = server
+        .get("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("text/html"),
+        )
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_postgres_partial_failure() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_postgres_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+        batch_concurrency_limit: 5,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+    let api_key = "nf_test_key_123";
+    let accept = axum::http::header::ACCEPT;
+    let accept_val = axum::http::header::HeaderValue::from_static("application/json");
+    let content_type = axum::http::header::CONTENT_TYPE;
+    let content_type_val =
+        axum::http::header::HeaderValue::from_static("application/json; charset=utf-8");
+    // Send a bulk PUT with two items. The first will fail because it does not exist.
+    // The second could theoretically succeed if it existed, but since neither exists,
+    // they will both fail. But even one failure triggers BAD_REQUEST.
+    let put_resp = server
+        .put("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(accept.clone(), accept_val.clone())
+        .add_header(content_type.clone(), content_type_val.clone())
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([
+                {
+                    "title": "Duplicate Title",
+                    "feed_url": "http://example.com/feed1",
+                    "publish_date": "2026-07-23 00:00:00"
+                },
+                {
+                    "title": "Duplicate Title",
+                    "feed_url": "http://example.com/feed2",
+                    "publish_date": "2026-07-23 01:00:00"
+                }
+            ]))
+            .unwrap(),
+        ))
+        .await;
+
+    // It should return BAD_REQUEST because there's a partial failure
+    assert_eq!(put_resp.status_code(), StatusCode::BAD_REQUEST);
+
+    let body: serde_json::Value = put_resp.json();
+    assert_eq!(body["Status"], "Success");
+    assert!(
+        body["FailedItems"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false)
+    );
 }

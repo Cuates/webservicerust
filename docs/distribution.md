@@ -60,13 +60,13 @@ To trigger a new release build for the `newsfeed` service, you must commit your 
 **1. Stage and commit your changes:**
 ```bash
 git add .
-git commit -m "chore: bump version to 2.1.0"
+git commit -m "chore: bump version to 3.0.0"
 ```
 
 **2. Create the Git tag:**
 Use the `newsfeed-v*` prefix convention to ensure the monorepo only builds the newsfeed project.
 ```bash
-git tag newsfeed-v2.1.0
+git tag newsfeed-v3.0.0
 ```
 
 **3. Push the commit to GitHub:**
@@ -77,7 +77,7 @@ git push origin main
 
 **4. Push the tag to GitHub:**
 ```bash
-git push origin newsfeed-v2.1.0
+git push origin newsfeed-v3.0.0
 ```
 *(This pushes the tag, which instantly triggers the `newsfeed-release.yml` pipeline).*
 
@@ -95,12 +95,12 @@ git commit -m "fix: address release build failure"
 
 **2. Delete the old failing tag (locally and on GitHub):**
 ```bash
-git tag -d newsfeed-v2.1.0
-git push origin --delete newsfeed-v2.1.0
+git tag -d newsfeed-v3.0.0
+git push origin --delete newsfeed-v3.0.0
 ```
 
 **3. Create the tag again on your new commit and push it:**
 ```bash
-git tag newsfeed-v2.1.0
-git push origin newsfeed-v2.1.0
+git tag newsfeed-v3.0.0
+git push origin newsfeed-v3.0.0
 ```

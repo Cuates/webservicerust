@@ -23,7 +23,7 @@ use std::sync::Arc;
 use newsfeed_config::{AppConfig, DatabaseConfig};
 use newsfeed_db::pool::AppState;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 #[tokio::main]
 async fn main() {
     // ── 0. Internal Health Check ─────────────────────────────────────────────
@@ -72,12 +72,30 @@ async fn main() {
         "Starting newsfeed-server"
     );
 
-    // ── 4. Build AppState ─────────────────────────────────────────────────────
     let state = Arc::new(
         AppState::init(&app_cfg, &db_cfg)
             .await
             .expect("Failed to initialise application state"),
     );
+
+    // ── 4.5. Spawn DB Health Watcher ──────────────────────────────────────────
+    let state_clone = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            let healthy = match state_clone.db.ping().await {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::error!(error = %e, "Background DB health ping failed");
+                    false
+                }
+            };
+            state_clone
+                .is_healthy
+                .store(healthy, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
 
     // ── 5. Build router ───────────────────────────────────────────────────────
     let app = router::build(Arc::clone(&state), &app_cfg);
@@ -134,11 +152,27 @@ async fn shutdown_signal() {
             .await;
     };
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    let terminate = async {
+        let mut ctrl_close =
+            signal::windows::ctrl_close().expect("Failed to install Ctrl+Close handler");
+        let mut ctrl_break =
+            signal::windows::ctrl_break().expect("Failed to install Ctrl+Break handler");
+        let mut ctrl_shutdown =
+            signal::windows::ctrl_shutdown().expect("Failed to install Ctrl+Shutdown handler");
+
+        tokio::select! {
+            _ = ctrl_close.recv() => {}
+            _ = ctrl_break.recv() => {}
+            _ = ctrl_shutdown.recv() => {}
+        }
+    };
+
+    #[cfg(not(any(unix, windows)))]
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
         () = ctrl_c    => { tracing::info!("Received Ctrl+C, shutting down"); }
-        () = terminate => { tracing::info!("Received SIGTERM, shutting down"); }
+        () = terminate => { tracing::info!("Received OS termination signal, shutting down"); }
     }
 }

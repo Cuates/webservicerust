@@ -1,6 +1,7 @@
 //! Header and payload validation — port of `check_headers()` and `check_payload()`
 //! from `newsfeedwebserviceclass.py`.
 
+use axum::http::HeaderMap;
 use std::collections::HashMap;
 
 use newsfeed_constants::http::{HeaderType, PossibleHeaderType};
@@ -16,14 +17,12 @@ use crate::error::ServiceError;
 /// of `Content-Type: application/json; charset=utf-8`.  When `false` (GET /
 /// QUERY), only the `Accept` header is checked, since bodyless requests do not
 /// carry a `Content-Type` by RFC convention.
-pub fn validate_headers(
-    headers: &HashMap<String, String>,
-    requires_body: bool,
-) -> Result<(), ServiceError> {
+pub fn validate_headers(headers: &HeaderMap, requires_body: bool) -> Result<(), ServiceError> {
     let accept = headers
         .get(HeaderType::ACCEPT)
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_lowercase();
 
     if accept != PossibleHeaderType::ACCEPT {
         return Err(ServiceError::InvalidHeader("HTTP accept invalid".into()));
@@ -32,8 +31,9 @@ pub fn validate_headers(
     if requires_body {
         let raw_ct = headers
             .get(HeaderType::CONTENT_TYPE)
-            .map(|s| s.to_lowercase())
-            .unwrap_or_default();
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default()
+            .to_lowercase();
 
         // Split "application/json; charset=utf-8" into content-type and charset parts.
         let mut parts = raw_ct.splitn(2, ';');
@@ -78,7 +78,7 @@ pub fn validate_payload(
         _ => {
             return Err(ServiceError::InvalidPayload(
                 "Payload must be a JSON object or array".into(),
-            ))
+            ));
         }
     };
 
@@ -124,29 +124,30 @@ pub fn validate_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::{HeaderMap, HeaderValue};
     use newsfeed_constants::http::{HeaderType, PossibleHeaderType};
     use serde_json::json;
 
     #[test]
     fn test_validate_headers_requires_body_success() {
-        let mut headers = HashMap::new();
+        let mut headers = HeaderMap::new();
         headers.insert(
-            HeaderType::ACCEPT.to_string(),
-            PossibleHeaderType::ACCEPT.to_string(),
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
         );
         headers.insert(
-            HeaderType::CONTENT_TYPE.to_string(),
-            "application/json; charset=utf-8".to_string(),
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
         );
         assert!(validate_headers(&headers, true).is_ok());
     }
 
     #[test]
     fn test_validate_headers_requires_body_missing_content_type() {
-        let mut headers = HashMap::new();
+        let mut headers = HeaderMap::new();
         headers.insert(
-            HeaderType::ACCEPT.to_string(),
-            PossibleHeaderType::ACCEPT.to_string(),
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
         );
 
         let result = validate_headers(&headers, true);
@@ -154,11 +155,56 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_headers_no_body_success() {
-        let mut headers = HashMap::new();
+    fn test_validate_headers_requires_body_invalid_charset() {
+        let mut headers = HeaderMap::new();
         headers.insert(
-            HeaderType::ACCEPT.to_string(),
-            PossibleHeaderType::ACCEPT.to_string(),
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
+        );
+        headers.insert(
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-16"),
+        );
+        let result = validate_headers(&headers, true);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_headers_requires_body_missing_charset_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
+        );
+        headers.insert(
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset"),
+        );
+        let result = validate_headers(&headers, true);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_headers_requires_body_no_semicolon() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
+        );
+        headers.insert(
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        let result = validate_headers(&headers, true);
+        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+    }
+
+    #[test]
+    fn test_validate_headers_no_body_success() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
         );
 
         // Even if Content-Type is missing, it should succeed when requires_body is false
@@ -167,8 +213,8 @@ mod tests {
 
     #[test]
     fn test_validate_headers_invalid_accept() {
-        let mut headers = HashMap::new();
-        headers.insert(HeaderType::ACCEPT.to_string(), "text/html".to_string());
+        let mut headers = HeaderMap::new();
+        headers.insert(HeaderType::ACCEPT, HeaderValue::from_static("text/html"));
 
         let result = validate_headers(&headers, false);
         assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
@@ -259,9 +305,10 @@ mod tests {
             "title": 123
         });
         let err = validate_payload(payload, &["feed_id"]).unwrap_err();
-        assert!(err
-            .to_string()
-            .starts_with("Invalid payload: Failed to parse payload item:"));
+        assert!(
+            err.to_string()
+                .starts_with("Invalid payload: Failed to parse payload item:")
+        );
     }
 
     #[test]
@@ -275,7 +322,7 @@ mod tests {
     #[test]
     fn test_validate_headers_missing_accept() {
         // Empty header map — accept defaults to "" which fails the check
-        let headers = HashMap::new();
+        let headers = HeaderMap::new();
         let result = validate_headers(&headers, false);
         assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
     }
@@ -283,14 +330,14 @@ mod tests {
     #[test]
     fn test_validate_headers_invalid_charset() {
         // Covers the charset != PossibleHeaderType::CHARSET branch
-        let mut headers = HashMap::new();
+        let mut headers = HeaderMap::new();
         headers.insert(
-            HeaderType::ACCEPT.to_string(),
-            PossibleHeaderType::ACCEPT.to_string(),
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
         );
         headers.insert(
-            HeaderType::CONTENT_TYPE.to_string(),
-            "application/json; charset=latin-1".to_string(),
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=latin-1"),
         );
         let result = validate_headers(&headers, true);
         assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
@@ -299,14 +346,14 @@ mod tests {
     #[test]
     fn test_validate_headers_invalid_content_type() {
         // Covers the content_type != PossibleHeaderType::CONTENT_TYPE branch
-        let mut headers = HashMap::new();
+        let mut headers = HeaderMap::new();
         headers.insert(
-            HeaderType::ACCEPT.to_string(),
-            PossibleHeaderType::ACCEPT.to_string(),
+            HeaderType::ACCEPT,
+            HeaderValue::from_static(PossibleHeaderType::ACCEPT),
         );
         headers.insert(
-            HeaderType::CONTENT_TYPE.to_string(),
-            "text/plain; charset=utf-8".to_string(),
+            HeaderType::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
         );
         let result = validate_headers(&headers, true);
         assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));

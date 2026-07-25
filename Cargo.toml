@@ -10,8 +10,8 @@ members = [
 ]
 
 [workspace.package]
-version = "2.1.0"
-edition = "2021"
+version = "3.0.0"
+edition = "2024"
 authors  = ["Cuates"]
 license  = "MIT"
 
@@ -35,7 +35,7 @@ missing_panics_doc      = "allow"
 axum           = { version = "0.8",  features = ["macros"] }
 tokio          = { version = "1",    features = ["rt-multi-thread", "net", "signal", "macros"] }
 tower          = { version = "0.5" }
-tower-http     = { version = "0.6",  features = ["cors", "trace", "request-id", "limit"] }
+tower-http     = { version = "0.6",  features = ["cors", "trace", "request-id", "limit", "timeout"] }
 tower_governor = { version = "0.8" }
 
 # Database
@@ -67,6 +67,7 @@ envy    = { version = "0.4" }
 thiserror = { version = "2" }
 anyhow    = { version = "1" }
 futures = { version = "0.3" }
+ipnet = "2"
 
 # ── Release profile optimisations ─────────────────────────────────────────────
 [profile.release]

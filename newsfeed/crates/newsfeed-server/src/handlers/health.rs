@@ -4,9 +4,9 @@
 //! is reachable.  Returns `503 Service Unavailable` when the DB ping fails,
 //! allowing load balancers to remove the instance from rotation.
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde_json::json;
 
 use newsfeed_db::pool::AppState;
@@ -19,17 +19,15 @@ use newsfeed_db::pool::AppState;
     )
 )]
 pub async fn handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let db_status = state.db.ping().await;
+    let is_healthy = state.is_healthy.load(Ordering::Relaxed);
 
-    match db_status {
-        Ok(()) => (StatusCode::OK, Json(json!({ "status": "ok", "db": "ok" }))).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "Health check DB ping failed");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({ "status": "degraded", "db": "error" })),
-            )
-                .into_response()
-        }
+    if is_healthy {
+        (StatusCode::OK, Json(json!({ "status": "ok", "db": "ok" }))).into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "status": "degraded", "db": "error" })),
+        )
+            .into_response()
     }
 }

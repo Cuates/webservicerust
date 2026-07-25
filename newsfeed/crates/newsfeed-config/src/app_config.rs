@@ -47,6 +47,18 @@ pub struct AppConfig {
     /// Environment variable: `BATCH_CONCURRENCY_LIMIT` (default: 5)
     #[serde(default = "default_batch_concurrency")]
     pub batch_concurrency_limit: usize,
+
+    /// Whether to trust X-Forwarded-For proxy headers.
+    #[serde(default = "default_false")]
+    pub trust_proxy: bool,
+
+    /// Optional comma-separated CIDR blocks for trusted proxies (e.g. 10.0.0.0/8).
+    /// If trust_proxy=true but this is empty, defaults to 127.0.0.1/32, ::1/128.
+    pub trusted_proxy_cidr: Option<String>,
+}
+
+fn default_false() -> bool {
+    false
 }
 
 impl AppConfig {
@@ -54,9 +66,23 @@ impl AppConfig {
     pub fn origins_vec(&self) -> Vec<String> {
         self.allowed_origins
             .split(',')
-            .map(|s| s.trim().to_owned())
+            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect()
+    }
+
+    /// Parse `trusted_proxy_cidr` into a vector of `ipnet::IpNet`.
+    pub fn proxy_cidrs(&self) -> Vec<ipnet::IpNet> {
+        match &self.trusted_proxy_cidr {
+            Some(cidr_str) if !cidr_str.trim().is_empty() => cidr_str
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect(),
+            _ => {
+                // Default to localhost loopback CIDRs if proxy is trusted but no CIDR given
+                vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()]
+            }
+        }
     }
 
     /// Parse `api_keys` into a `std::collections::HashSet<String>`.
@@ -102,6 +128,8 @@ mod tests {
             rate_limit_rps: 10,
             rate_limit_burst: 30,
             batch_concurrency_limit: 5,
+            trust_proxy: false,
+            trusted_proxy_cidr: None,
         }
     }
 
@@ -192,5 +220,30 @@ mod tests {
         assert_eq!(config.batch_concurrency_limit, 5);
         assert!(config.api_keys.is_empty());
         assert!(config.allowed_origins.is_empty());
+        assert!(!config.trust_proxy);
+    }
+
+    #[test]
+    fn test_proxy_cidrs() {
+        let mut cfg = make_config("key1", "http://localhost");
+        cfg.trusted_proxy_cidr = Some("10.0.0.0/8, 192.168.0.0/16, invalid".to_string());
+        let cidrs = cfg.proxy_cidrs();
+        assert_eq!(cidrs.len(), 2);
+        assert_eq!(cidrs[0].to_string(), "10.0.0.0/8");
+        assert_eq!(cidrs[1].to_string(), "192.168.0.0/16");
+    }
+
+    #[test]
+    fn test_proxy_cidrs_default() {
+        let cfg = make_config("key1", "http://localhost");
+        let cidrs = cfg.proxy_cidrs();
+        assert_eq!(cidrs.len(), 2);
+        assert_eq!(cidrs[0].to_string(), "127.0.0.1/32");
+        assert_eq!(cidrs[1].to_string(), "::1/128");
+
+        let mut cfg2 = cfg.clone();
+        cfg2.trusted_proxy_cidr = Some("   ".to_string());
+        let cidrs2 = cfg2.proxy_cidrs();
+        assert_eq!(cidrs2.len(), 2);
     }
 }

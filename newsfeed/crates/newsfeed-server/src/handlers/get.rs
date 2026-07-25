@@ -3,8 +3,8 @@
 use axum::{
     extract::{Query, State},
     http::{
-        header::{ETAG, IF_NONE_MATCH},
         HeaderMap, StatusCode,
+        header::{ETAG, IF_NONE_MATCH},
     },
     response::{IntoResponse, Json},
 };
@@ -15,8 +15,6 @@ use newsfeed_service::{extract_feed, payload_validator::validate_get_params, val
 use std::collections::HashMap;
 
 use std::sync::Arc;
-
-use crate::handlers::header_map_to_lowercase;
 
 #[utoipa::path(
     get,
@@ -36,8 +34,7 @@ pub async fn handler(
 ) -> impl IntoResponse {
     // ── 1. Validate headers ───────────────────────────────────────────────────
     // GET requests carry no body, so Content-Type validation is skipped.
-    let header_map = header_map_to_lowercase(&headers);
-    if let Err(e) = validate_headers(&header_map, false) {
+    if let Err(e) = validate_headers(&headers, false) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::<serde_json::Value>::error_with_code(
@@ -61,10 +58,10 @@ pub async fn handler(
             let hash = xxhash_rust::xxh64::xxh64(&body_bytes, 0);
             let etag = format!("\"{hash:016x}\"");
 
-            if let Some(if_none_match) = headers.get(IF_NONE_MATCH) {
-                if if_none_match.as_bytes() == etag.as_bytes() {
-                    return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
-                }
+            if let Some(if_none_match) = headers.get(IF_NONE_MATCH)
+                && if_none_match.as_bytes() == etag.as_bytes()
+            {
+                return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
             }
 
             (StatusCode::OK, [(ETAG, etag)], body_bytes).into_response()

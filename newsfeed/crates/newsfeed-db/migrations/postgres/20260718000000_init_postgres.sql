@@ -1440,3 +1440,46 @@ ALTER TABLE ONLY public.newsfeed ALTER COLUMN nfid SET DEFAULT nextval('public.n
 
 ALTER TABLE ONLY public.newsfeed
     ADD CONSTRAINT pk_newsfeed_title PRIMARY KEY (title);
+
+--
+-- Name: cud_bulk_json_newsfeed; Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.cud_bulk_json_newsfeed(
+    IN optionmode text,
+    IN payload json,
+    INOUT status text DEFAULT NULL::text
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    item json;
+    item_status text;
+    final_status jsonb := '[]'::jsonb;
+    err_msg text;
+BEGIN
+    FOR item IN SELECT * FROM json_array_elements(payload)
+    LOOP
+        BEGIN
+            CALL public.insertupdatedeletenewsfeed(
+                optionmode,
+                item->>'title',
+                item->>'image_url',
+                item->>'feed_url',
+                item->>'actual_url',
+                item->>'publish_date',
+                item_status
+            );
+            final_status := final_status || item_status::jsonb;
+        EXCEPTION WHEN OTHERS THEN
+            GET STACKED DIAGNOSTICS err_msg = MESSAGE_TEXT;
+            final_status := final_status || jsonb_build_object(
+                'Status', 'Error',
+                'Message', err_msg,
+                'Item', item
+            );
+        END;
+    END LOOP;
+    status := final_status::text;
+END;
+$$;

@@ -112,7 +112,7 @@ workspace = false
 description = "Run all workspace tests"
 dependencies = ["check-docker"]
 command = "cargo"
-args = ["test", "--workspace"]
+args = ["test", "--workspace", "--", "--include-ignored"]
 
 [tasks.test-coverage]
 workspace = false
@@ -121,7 +121,7 @@ run_task = { name = ["check-docker", "test-coverage-run", "test-coverage-report"
 
 [tasks.test-coverage-run]
 command = "cargo"
-args = ["llvm-cov", "--workspace", "--all-features", "--ignore-filename-regex", ".*main\\.rs", "--fail-under-lines", "99", "--fail-under-functions", "99"]
+args = ["llvm-cov", "--workspace", "--all-features", "--ignore-filename-regex", ".*main\\.rs", "--fail-under-lines", "99", "--fail-under-functions", "99", "--", "--include-ignored"]
 
 [tasks.test-coverage-report]
 command = "cargo"

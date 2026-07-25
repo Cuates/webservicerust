@@ -6,9 +6,9 @@ use utoipa::OpenApi;
     paths(
         crate::handlers::health::handler,
         crate::handlers::get::handler,
-        crate::handlers::post::handler,
-        crate::handlers::put::handler,
-        crate::handlers::delete::handler
+        crate::handlers::cud::post_handler,
+        crate::handlers::cud::put_handler,
+        crate::handlers::cud::delete_handler
     ),
     components(
         schemas(ExtractParams, CudParams, NewsFeedRow, ApiResponse<serde_json::Value>)

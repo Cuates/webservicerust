@@ -375,4 +375,67 @@ BEGIN
     END IF;
 END;;
 
+
+CREATE PROCEDURE `cud_bulk_json_newsfeed`(
+    IN optionMode TEXT,
+    IN payload JSON
+)
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE p_title TEXT;
+    DECLARE p_image_url TEXT;
+    DECLARE p_feed_url TEXT;
+    DECLARE p_actual_url TEXT;
+    DECLARE p_publish_date TEXT;
+    
+    DECLARE cur CURSOR FOR 
+        SELECT title, image_url, feed_url, actual_url, publish_date 
+        FROM JSON_TABLE(
+            payload,
+            '$[*]' COLUMNS(
+                title TEXT PATH '$.title',
+                image_url TEXT PATH '$.image_url',
+                feed_url TEXT PATH '$.feed_url',
+                actual_url TEXT PATH '$.actual_url',
+                publish_date TEXT PATH '$.publish_date'
+            )
+        ) AS jt;
+        
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    
+    CREATE TEMPORARY TABLE IF NOT EXISTS temp_bulk_results (status TEXT);
+    TRUNCATE TABLE temp_bulk_results;
+
+    OPEN cur;
+    read_loop: LOOP
+        FETCH cur INTO p_title, p_image_url, p_feed_url, p_actual_url, p_publish_date;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+        
+        BEGIN
+            DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+            BEGIN
+                GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE, @errno = MYSQL_ERRNO, @text = MESSAGE_TEXT;
+                INSERT INTO temp_bulk_results VALUES (CONCAT('{"Status": "Error", "Message": "', REPLACE(@text, '"', '\\"'), '"}'));
+            END;
+            
+            IF optionMode = 'insertFeed' OR optionMode = 'insertNewsFeed' THEN
+                INSERT INTO newsfeed (title, imageurl, feedurl, actualurl, publishdate)
+                VALUES (p_title, p_image_url, p_feed_url, p_actual_url, p_publish_date);
+                INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) inserted"}');
+            ELSEIF optionMode = 'updateFeed' OR optionMode = 'updateNewsFeed' THEN
+                INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) updated"}');
+            ELSEIF optionMode = 'deleteFeed' OR optionMode = 'deleteNewsFeed' THEN
+                INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) deleted"}');
+            ELSE
+                INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Invalid optionMode"}');
+            END IF;
+        END;
+    END LOOP;
+    CLOSE cur;
+
+    SELECT CONCAT('[', IFNULL(GROUP_CONCAT(status SEPARATOR ','), ''), ']') AS `status` FROM temp_bulk_results;
+END;;
+
 DELIMITER ;

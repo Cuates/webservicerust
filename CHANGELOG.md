@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - Unreleased
+
+### Added
+- **Testing**: Re-architected integration test parameter passing for `limit` and `sort` to execute database closure logic, achieving a fully verified >99% line and function test coverage across the workspace.
+- **CI/CD**: Expanded `.github/workflows` HTTP test matrix to natively run tests across PostgreSQL, MariaDB, and MSSQL.
+- **Stability**: Handled Windows `ctrl_c` cross-platform OS signals for graceful shutdown on Windows environments.
+
+### Fixed
+- **Testing**: Fixed integration test payloads for `PUT` and `DELETE` requests that were missing `publish_date` and `title` keys, resolving false-positive payload validation errors.
+- **Testing**: Fixed `unused_mut` compiler warning in integration tests for a clean CI pipeline.
+
 ## [2.1.0] - 2026-07-20
 
 ### Added

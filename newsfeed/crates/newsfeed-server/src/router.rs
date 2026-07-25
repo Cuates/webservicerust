@@ -9,22 +9,22 @@
 
 use std::sync::Arc;
 
-use axum::{middleware as axum_middleware, response::IntoResponse, routing::get, Router};
+use axum::{Router, middleware as axum_middleware, response::IntoResponse, routing::get};
 use tower_http::{
     cors::CorsLayer,
     limit::RequestBodyLimitLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 use newsfeed_config::AppConfig;
 use newsfeed_constants::http::{API_ROUTE_PREFIX, HEALTH_ROUTE, PROJECT_NAME};
 use newsfeed_db::pool::AppState;
 
 use crate::handlers;
-use crate::middleware::api_key;
+use crate::middleware::{api_key, ip_extractor::SecureIpExtractor};
 use crate::openapi::ApiDoc;
 use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use tower_governor::governor::GovernorConfigBuilder;
@@ -41,6 +41,7 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         GovernorConfigBuilder::default()
             .per_second(cfg.rate_limit_rps)
             .burst_size(cfg.rate_limit_burst)
+            .key_extractor(SecureIpExtractor::new(cfg.trust_proxy, cfg.proxy_cidrs()))
             .finish()
             .expect("Failed to build rate-limit config"),
     );
@@ -67,10 +68,13 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         .route(
             &newsfeed_path,
             get(handlers::get::handler)
-                .post(handlers::post::handler)
-                .put(handlers::put::handler)
-                .delete(handlers::delete::handler)
-                .fallback(handlers::query::handler),
+                .post(handlers::cud::post_handler)
+                .put(handlers::cud::put_handler)
+                .delete(handlers::cud::delete_handler),
+        )
+        .route(
+            "/api-docs/openapi.json",
+            get(|| async { axum::Json(ApiDoc::openapi()) }),
         )
         .layer(axum_middleware::from_fn_with_state(
             Arc::clone(&state),
@@ -79,16 +83,16 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         .layer(governor_layer);
 
     Router::new()
-        .merge(
-            SwaggerUi::new("/api/newsfeed/swagger-ui")
-                .url("/api-docs/openapi.json", ApiDoc::openapi()),
-        )
         // ── Health check (no auth required) ──────────────────────────────────
         .route(HEALTH_ROUTE, get(handlers::health::handler))
         // ── Authenticated Newsfeed routes ─────────────────────────────────────
         .merge(api_routes)
         // ── Global Middleware stack ───────────────────────────────────────────
         .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(30),
+        ))
         .layer(cors)
         .layer(
             tower::ServiceBuilder::new()
@@ -161,6 +165,8 @@ mod tests {
             rate_limit_rps: 10,
             rate_limit_burst: 30,
             batch_concurrency_limit: 5,
+            trust_proxy: false,
+            trusted_proxy_cidr: None,
         };
         let _ = build_cors(&cfg);
     }
@@ -178,6 +184,8 @@ mod tests {
             rate_limit_rps: 10,
             rate_limit_burst: 30,
             batch_concurrency_limit: 5,
+            trust_proxy: false,
+            trusted_proxy_cidr: None,
         };
         let _ = build_cors(&cfg);
     }
@@ -195,6 +203,8 @@ mod tests {
             rate_limit_rps: 10,
             rate_limit_burst: 30,
             batch_concurrency_limit: 5,
+            trust_proxy: false,
+            trusted_proxy_cidr: None,
         };
         // Should not panic — the valid origin is kept, the invalid one is skipped with a warning.
         let _ = build_cors(&cfg);

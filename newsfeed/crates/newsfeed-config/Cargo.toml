@@ -9,6 +9,7 @@ serde              = { workspace = true }
 envy.workspace     = true
 dotenvy.workspace  = true
 thiserror.workspace = true
+ipnet.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

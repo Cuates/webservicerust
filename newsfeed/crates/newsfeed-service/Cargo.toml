@@ -11,6 +11,7 @@ newsfeed-db        = { path = "../newsfeed-db" }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
 tracing    = { workspace = true }
+axum       = { workspace = true }
 
 [dev-dependencies]
 sqlx         = { workspace = true }

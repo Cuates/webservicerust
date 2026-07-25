@@ -32,8 +32,8 @@ pub struct DatabaseConfig {
     /// `true`  → `EncryptionLevel::Required`  (production / NPM-fronted)
     /// `false` → `EncryptionLevel::NotSupported` (local development without certs)
     ///
-    /// Environment variable: `DB_MSSQL_ENCRYPT` (default: `false`)
-    #[serde(default = "default_false")]
+    /// Environment variable: `DB_MSSQL_ENCRYPT` (default: `true`)
+    #[serde(default = "default_true")]
     pub db_mssql_encrypt: bool,
 
     /// Trust the server certificate without validation.
@@ -103,6 +103,9 @@ impl DatabaseConfig {
 fn default_false() -> bool {
     false
 }
+fn default_true() -> bool {
+    true
+}
 fn default_pool_max() -> u32 {
     10
 }
@@ -128,7 +131,7 @@ mod tests {
             mssql_database: None,
             mssql_username: None,
             mssql_password: None,
-            db_mssql_encrypt: false,
+            db_mssql_encrypt: true,
             db_mssql_trust_cert: false,
             db_pool_max: 10,
             db_pool_min: 2,
@@ -204,7 +207,7 @@ mod tests {
         assert_eq!(cfg.db_pool_max, 10);
         assert_eq!(cfg.db_pool_min, 2);
         assert_eq!(cfg.db_acquire_timeout_secs, 5);
-        assert!(!cfg.db_mssql_encrypt);
+        assert!(cfg.db_mssql_encrypt); // Now defaults to true
         assert!(!cfg.db_mssql_trust_cert);
     }
 
@@ -218,7 +221,7 @@ mod tests {
         assert_eq!(config.db_pool_max, 10);
         assert_eq!(config.db_pool_min, 2);
         assert_eq!(config.db_acquire_timeout_secs, 5);
-        assert!(!config.db_mssql_encrypt);
+        assert!(config.db_mssql_encrypt); // Now defaults to true
         assert!(!config.db_mssql_trust_cert);
     }
     #[test]
@@ -229,7 +232,7 @@ mod tests {
         assert_eq!(config.db_pool_max, 10);
         assert_eq!(config.db_pool_min, 2);
         assert_eq!(config.db_acquire_timeout_secs, 5);
-        assert!(!config.db_mssql_encrypt);
+        assert!(config.db_mssql_encrypt); // Now defaults to true
         assert!(!config.db_mssql_trust_cert);
     }
 }

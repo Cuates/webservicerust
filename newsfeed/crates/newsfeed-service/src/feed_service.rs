@@ -39,7 +39,7 @@ pub async fn extract_feed(
 pub async fn cud_feed(
     state: &Arc<AppState>,
     option_mode: OptionMode,
-    params: &CudParams,
+    params: &[CudParams],
 ) -> Result<Vec<Value>, ServiceError> {
     match &state.db {
         DbPool::Postgres(pool) => newsfeed_db::postgres::cud_feed(pool, option_mode, params)
@@ -71,6 +71,7 @@ mod tests {
             db: DbPool::Postgres(pool),
             api_keys: HashSet::new(),
             batch_concurrency_limit: 1,
+            is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 
@@ -82,6 +83,7 @@ mod tests {
             db: DbPool::MariaDb(pool),
             api_keys: HashSet::new(),
             batch_concurrency_limit: 1,
+            is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 
@@ -102,9 +104,10 @@ mod tests {
             .build_unchecked(mgr);
 
         Arc::new(AppState {
-            db: DbPool::MsSql(Arc::new(pool)),
+            db: DbPool::MsSql(pool),
             api_keys: HashSet::new(),
             batch_concurrency_limit: 1,
+            is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 
@@ -160,7 +163,7 @@ mod tests {
     #[tokio::test]
     async fn test_cud_feed_postgres_dispatches_and_errors() {
         let state = make_postgres_state();
-        let result = cud_feed(&state, OptionMode::InsertFeed, &default_cud_params()).await;
+        let result = cud_feed(&state, OptionMode::InsertFeed, &[default_cud_params()]).await;
         assert!(result.is_err(), "expected DB error from fake Postgres pool");
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
@@ -168,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn test_cud_feed_mariadb_dispatches_and_errors() {
         let state = make_mariadb_state();
-        let result = cud_feed(&state, OptionMode::InsertFeed, &default_cud_params()).await;
+        let result = cud_feed(&state, OptionMode::InsertFeed, &[default_cud_params()]).await;
         assert!(result.is_err(), "expected DB error from fake MariaDB pool");
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
@@ -176,7 +179,7 @@ mod tests {
     #[tokio::test]
     async fn test_cud_feed_mssql_dispatches_and_errors() {
         let state = make_mssql_state().await;
-        let result = cud_feed(&state, OptionMode::InsertFeed, &default_cud_params()).await;
+        let result = cud_feed(&state, OptionMode::InsertFeed, &[default_cud_params()]).await;
         assert!(result.is_err(), "expected DB error from fake MSSQL pool");
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
