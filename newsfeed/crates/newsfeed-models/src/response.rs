@@ -15,7 +15,7 @@ pub struct FailedItem {
 
 /// Generic API response envelope matching the Python reference format.
 ///
-/// All endpoints return this structure.  Field names use PascalCase in JSON
+/// All endpoints return this structure.  Field names use `PascalCase` in JSON
 /// to maintain compatibility with existing clients.
 ///
 /// The `Code` field provides a machine-readable error/success code for clients
@@ -86,6 +86,7 @@ impl<T: Serialize> ApiResponse<T> {
     }
 
     /// Attach failed items to the response (for partial success/failure).
+    #[must_use]
     pub fn with_failed_items(mut self, failed: Vec<FailedItem>) -> Self {
         self.failed_items = failed;
         self
@@ -153,5 +154,25 @@ mod tests {
         let serialized = serde_json::to_value(&resp).unwrap();
         assert!(serialized.get("FailedItems").is_some());
         assert_eq!(serialized["FailedItems"][0]["Reason"], "duplicate");
+    }
+
+    #[test]
+    fn test_api_response_partial_status_serialization() {
+        let mut resp = ApiResponse::success(
+            "Partial batch success",
+            vec![json!({"id": 2, "status": "ok"})],
+        );
+        resp.status = "Partial".to_string();
+        resp = resp.with_failed_items(vec![FailedItem {
+            item: json!({"id": 1}),
+            reason: "validation failed".to_owned(),
+        }]);
+
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["Status"], "Partial");
+        assert_eq!(serialized["Code"], "OK");
+        assert_eq!(serialized["Count"], 1);
+        assert_eq!(serialized["Result"][0]["id"], 2);
+        assert_eq!(serialized["FailedItems"][0]["Reason"], "validation failed");
     }
 }

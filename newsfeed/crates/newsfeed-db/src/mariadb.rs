@@ -1,16 +1,15 @@
-//! MariaDB query executors.
+//! `MariaDB` query executors.
 //!
 //! Calls `extractnewsfeed` and `insertupdatedeletenewsfeed` stored procedures
-//! using sqlx's MySQL driver (compatible with MariaDB).
+//! using sqlx's `MySQL` driver (compatible with `MariaDB`).
 
-use serde_json::Value;
 use sqlx::MySqlPool;
 use tracing::instrument;
 
 use newsfeed_constants::db::OptionMode;
-use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow};
+use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow, SortOrder};
 
-use crate::error::DbError;
+use crate::{error::DbError, shared::parse_status_rows};
 
 // ── Extract ───────────────────────────────────────────────────────────────────
 
@@ -27,7 +26,7 @@ pub async fn extract_feed(
         .bind(params.feed_url.as_deref())
         .bind(params.actual_url.as_deref())
         .bind(params.limit.map(|l| l.to_string()))
-        .bind(params.sort.as_ref().map(|s| s.as_str()))
+        .bind(params.sort.as_ref().map(SortOrder::as_str))
         .fetch_all(pool)
         .await?;
 
@@ -79,64 +78,9 @@ pub async fn cud_feed(
     Ok(results)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Parse the status column rows returned by the stored procedure.
-///
-/// A `NULL` status column indicates the procedure produced no usable output —
-/// propagated as `DbError::EmptyResult` so the handler returns a 5xx rather
-/// than a misleading `200 OK` with an error body.
-fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError> {
-    let mut results = Vec::new();
-    for (status_json,) in rows {
-        let json_str = status_json.ok_or(DbError::EmptyResult)?;
-        let parsed: Value = serde_json::from_str(&json_str)?;
-
-        if let Value::Array(arr) = parsed {
-            results.extend(arr);
-        } else {
-            results.push(parsed);
-        }
-    }
-    Ok(results)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_status_rows_ok() {
-        let rows = vec![(Some(r#"{"Status":"Success"}"#.to_string()),)];
-        let res = parse_status_rows(rows).unwrap();
-        assert_eq!(res.len(), 1);
-        assert_eq!(res[0]["Status"], "Success");
-    }
-
-    #[test]
-    fn test_parse_status_rows_array() {
-        let rows = vec![(Some(
-            r#"[{"Status":"Success"},{"Status":"Error"}]"#.to_string(),
-        ),)];
-        let res = parse_status_rows(rows).unwrap();
-        assert_eq!(res.len(), 2);
-        assert_eq!(res[0]["Status"], "Success");
-        assert_eq!(res[1]["Status"], "Error");
-    }
-
-    #[test]
-    fn test_parse_status_rows_empty_result() {
-        let rows = vec![(None,)];
-
-        assert!(matches!(parse_status_rows(rows), Err(DbError::EmptyResult)));
-    }
-
-    #[test]
-    fn test_parse_status_rows_invalid_json() {
-        let rows = vec![(Some("not json".to_string()),)];
-        assert!(matches!(parse_status_rows(rows), Err(DbError::Json(_))));
-    }
-
     #[tokio::test]
     async fn test_mariadb_extract_error() {
         let pool = sqlx::mysql::MySqlPoolOptions::new()

@@ -1,18 +1,19 @@
 //! API key authentication middleware.
 //!
-//! Validates the `X-API-Key` header against the `HashSet<String>` stored in
+//! Validates the `X-API-Key` header against the `Vec<[u8; 32]>` stored in
 //! `AppState`.  Returns `401 Unauthorized` for missing or invalid keys.
 //!
 //! Security properties:
-//! - The incoming key is SHA-256 hashed before comparison against the in-memory
-//!   `HashSet`. This naturally mitigates timing side-channel attacks.
+//! - The incoming key is SHA-256 hashed and compared against the in-memory
+//!   digest list using `subtle::ConstantTimeEq::ct_eq` in a non-short-circuiting fold.
+//!   This prevents timing side-channel attacks.
 //! - Full key is never logged; only the first 6 characters appear in audit logs.
 //! - Applies to EVERY route except `/health`.
 
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
-use std::fmt::Write;
+use subtle::ConstantTimeEq;
 
 use axum::{
     body::Body,
@@ -61,43 +62,32 @@ pub async fn api_key_middleware(
     }
 }
 
-pub(crate) fn is_api_key_valid(
-    provided_key: &str,
-    valid_keys: &std::collections::HashSet<String>,
-) -> bool {
+pub(crate) fn is_api_key_valid(provided_key: &str, valid_keys: &[[u8; 32]]) -> bool {
     if provided_key.is_empty() {
         return false;
     }
     let mut hasher = Sha256::new();
     hasher.update(provided_key.as_bytes());
-    let hash_result = hasher.finalize();
+    let hash_result: [u8; 32] = hasher.finalize().into();
 
-    let mut hex_hash = String::with_capacity(64);
-    for byte in hash_result {
-        let _ = write!(&mut hex_hash, "{byte:02x}");
+    let mut is_valid = subtle::Choice::from(0);
+    for key in valid_keys {
+        is_valid |= key.ct_eq(&hash_result);
     }
-
-    valid_keys.contains(&hex_hash)
+    is_valid.into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn test_is_api_key_valid() {
-        let mut valid_keys = HashSet::new();
-        // hash of "nf_test_key_123"
         let key_str = "nf_test_key_123";
         let mut hasher = Sha256::new();
         hasher.update(key_str.as_bytes());
-        let hash_result = hasher.finalize();
-        let mut hex_hash = String::with_capacity(64);
-        for byte in hash_result {
-            let _ = write!(&mut hex_hash, "{byte:02x}");
-        }
-        valid_keys.insert(hex_hash);
+        let hash_result: [u8; 32] = hasher.finalize().into();
+        let valid_keys = vec![hash_result];
 
         assert!(is_api_key_valid(key_str, &valid_keys));
         assert!(!is_api_key_valid("wrong_key", &valid_keys));

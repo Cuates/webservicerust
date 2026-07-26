@@ -69,14 +69,16 @@ impl DatabaseConfig {
     pub fn validate(&self) {
         match self.database_target {
             DatabaseTarget::Postgres => {
-                if self.postgres_url.is_none() {
-                    panic!("DATABASE_TARGET=postgres but POSTGRES_URL is not set");
-                }
+                assert!(
+                    self.postgres_url.is_some(),
+                    "DATABASE_TARGET=postgres but POSTGRES_URL is not set"
+                );
             }
             DatabaseTarget::MariaDb => {
-                if self.mariadb_url.is_none() {
-                    panic!("DATABASE_TARGET=mariadb but MARIADB_URL is not set");
-                }
+                assert!(
+                    self.mariadb_url.is_some(),
+                    "DATABASE_TARGET=mariadb but MARIADB_URL is not set"
+                );
             }
             DatabaseTarget::MsSql => {
                 let missing: Vec<&str> = [
@@ -89,12 +91,11 @@ impl DatabaseConfig {
                 .filter_map(|(name, absent)| if *absent { Some(*name) } else { None })
                 .collect();
 
-                if !missing.is_empty() {
-                    panic!(
-                        "DATABASE_TARGET=mssql but the following env vars are not set: {}",
-                        missing.join(", ")
-                    );
-                }
+                assert!(
+                    missing.is_empty(),
+                    "DATABASE_TARGET=mssql but the following env vars are not set: {}",
+                    missing.join(", ")
+                );
             }
         }
     }

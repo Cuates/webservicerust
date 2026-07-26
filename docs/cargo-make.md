@@ -43,6 +43,17 @@ These targets wrap Docker Compose to simplify container orchestration.
 | **`cargo make docker-restart`** | Quickly restarts the containers. Useful when changing `.env` variables. | `docker compose down && docker compose up -d` |
 | **`cargo make docker-logs`** | Follows (tails) the logs from the `newsfeed-server` container in real time. | `docker compose logs -f newsfeed-server` |
 | **`cargo make clean-test-containers`** | Safely force-removes ONLY orphaned testcontainers generated during testing, ignoring your personal containers. | `docker rm -f ...` |
+| **`cargo make check-docker`** | Verifies Docker Desktop is running before executing tests that require containers. | `duckscript` (custom) |
+
+### 🗄️ Database Helpers
+
+Shortcuts for quickly switching the active database engine in your `.env` file.
+
+| Target | Description | Underlying Command |
+|---|---|---|
+| **`cargo make use-postgres`** | Switches active `DATABASE_TARGET` in `.env` to PostgreSQL. | `@rust` script |
+| **`cargo make use-mariadb`** | Switches active `DATABASE_TARGET` in `.env` to MariaDB. | `@rust` script |
+| **`cargo make use-mssql`** | Switches active `DATABASE_TARGET` in `.env` to MSSQL. | `@rust` script |
 
 ### 🔑 Security & Key Management
 

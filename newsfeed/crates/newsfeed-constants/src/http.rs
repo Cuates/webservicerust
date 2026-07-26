@@ -81,6 +81,7 @@ impl ResponseCode {
 pub struct ResponseMessage;
 
 impl ResponseMessage {
+    pub const PARTIAL: &'static str = "Partial";
     pub const PAYLOAD_ISSUE: &'static str = "Issue with payload check";
     pub const PROCESSED: &'static str = "Processed request";
     pub const NOT_FOUND: &'static str = "Not Found";
@@ -104,4 +105,14 @@ impl PossiblePayloadParams {
     pub const PUBLISH_DATE: &'static str = "publish_date";
     pub const LIMIT: &'static str = "limit";
     pub const SORT: &'static str = "sort";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_response_message_partial_constant() {
+        assert_eq!(ResponseMessage::PARTIAL, "Partial");
+    }
 }

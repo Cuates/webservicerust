@@ -54,6 +54,7 @@ pub enum OptionMode {
 
 impl OptionMode {
     /// Return the exact `optionMode` string expected by the stored procedures.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExtractFeed => "extractNewsFeed",

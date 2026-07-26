@@ -1465,31 +1465,29 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-config"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
- "dotenvy",
  "envy",
  "ipnet",
  "newsfeed-constants",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "newsfeed-constants"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "newsfeed-db"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
- "anyhow",
  "bb8",
  "bb8-tiberius",
+ "hex",
  "newsfeed-config",
  "newsfeed-constants",
  "newsfeed-models",
@@ -1506,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-models"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1516,15 +1514,14 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-server"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
- "anyhow",
- "async-trait",
  "axum",
  "axum-test",
+ "bb8",
+ "bb8-tiberius",
  "dotenvy",
  "envy",
- "futures",
  "hex",
  "ipnet",
  "newsfeed-config",
@@ -1532,26 +1529,26 @@ dependencies = [
  "newsfeed-db",
  "newsfeed-models",
  "newsfeed-service",
- "serde",
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "subtle",
  "testcontainers",
- "thiserror 2.0.18",
+ "tiberius",
  "tokio",
+ "tokio-util",
  "tower",
  "tower-http",
  "tower_governor",
  "tracing",
  "tracing-subscriber",
- "url",
  "utoipa",
  "xxhash-rust",
 ]
 
 [[package]]
 name = "newsfeed-service"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "axum",
  "bb8",
@@ -1564,7 +1561,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tiberius",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3222,6 +3218,7 @@ checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
 dependencies = [
  "proc-macro2",
  "quote",
+ "regex",
  "syn 2.0.118",
 ]
 

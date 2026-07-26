@@ -17,10 +17,13 @@ bb8-tiberius = { workspace = true }
 serde_json   = { workspace = true }
 thiserror    = { workspace = true }
 tracing      = { workspace = true }
-anyhow       = { workspace = true }
+hex          = { workspace = true }
 
 [dev-dependencies]
 testcontainers = "0.15"
 tokio          = { workspace = true }
 tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
 

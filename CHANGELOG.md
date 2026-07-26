@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - Unreleased
+## [Unreleased]
+
+## [4.0.0] - 2026-07-25
+
+### Added
+- **Testing**: Added live database connection overrides (`TEST_POSTGRES_URL`, `TEST_MARIADB_URL`, `TEST_MSSQL_URL`, `TEST_MSSQL_PORT`) in integration tests to bypass `testcontainers` when testing against live database instances.
+- **Documentation**: Documented `tower_governor` per-replica in-memory rate limiting behavior and multi-database test overrides in project READMEs.
+
+### Changed
+- **Optimization**: Purged 7 unused crate dependencies across workspace manifests via `cargo machete` audit for cleaner dependency trees and faster builds.
+- **Release**: Bumped workspace package version to `4.0.0`.
+
+### Fixed
+- **Testing**: Fixed `test_db_true_partial_success` in `newsfeed-server/tests/integration_test.rs` by asserting on the correct response envelope field (`Message` vs `Status`).
+- **Documentation**: Corrected historical `[0.0.2]` changelog entry regarding CUD handler concurrency to accurately reflect ACID transactional loop behavior for Postgres/MariaDB and batch procedure execution for MSSQL.
+
+## [3.0.0] - 2026-07-25
 
 ### Added
 - **Testing**: Re-architected integration test parameter passing for `limit` and `sort` to execute database closure logic, achieving a fully verified >99% line and function test coverage across the workspace.
@@ -86,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Performance**: Replaced per-request MSSQL TCP handshakes with a `bb8-tiberius` async connection pool.
-- **Performance**: Upgraded sequential CUD handler loops to run concurrent futures via `buffer_unordered` (bounded by `BATCH_CONCURRENCY_LIMIT`).
+- **Performance**: Evaluated concurrent CUD handler loops (`buffer_unordered`), establishing sequential ACID transactional loops for Postgres and MariaDB and batch JSON procedure execution for MSSQL.
 - **Security**: Hardened API key validation using `subtle::ConstantTimeEq` to prevent timing side-channel attacks.
 - **Correctness**: Ensured GET/QUERY routes don't enforce `Content-Type` headers.
 - **Config**: Exposed DB pool tuning settings (`DB_POOL_MAX`, timeouts) and MSSQL TLS encryption settings via environment variables.

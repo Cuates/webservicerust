@@ -1,17 +1,17 @@
-//! MSSQL query executors using `tiberius` via a `bb8` connection pool.
+//! `MSSQL` query executors using `tiberius` via a `bb8` connection pool.
 //!
 //! Connections are checked out from the pool per query and automatically
-//! returned on drop, eliminating the per-request TCP handshake overhead.
+//! returned on drop, eliminating the per-request `TCP` handshake overhead.
 
 use serde_json::Value;
 use tiberius::Query;
 use tracing::instrument;
 
 use newsfeed_constants::db::OptionMode;
-use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow};
+use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow, SortOrder};
 
-use crate::error::DbError;
 use crate::pool::MssqlPool;
+use crate::{error::DbError, shared::parse_status_rows};
 
 // ── Extract ───────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ pub async fn extract_feed(
     query.bind(params.actual_url.as_deref());
     let limit_str = params.limit.map(|l| l.to_string());
     query.bind(limit_str);
-    query.bind(params.sort.as_ref().map(|s| s.as_str()));
+    query.bind(params.sort.as_ref().map(SortOrder::as_str));
 
     let stream = query.query(&mut *client).await?;
     let rows = stream.into_first_result().await?;
@@ -83,62 +83,15 @@ pub async fn cud_feed(
     let mut rows: Vec<(Option<String>,)> = Vec::with_capacity(tiberius_rows.len());
     for row in tiberius_rows {
         let status: Option<&str> = row.get(0);
-        rows.push((status.map(|s| s.to_string()),));
+        rows.push((status.map(std::string::ToString::to_string),));
     }
 
     parse_status_rows(rows)
 }
 
-fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<Value>, DbError> {
-    let mut results = Vec::new();
-    for (status_json,) in rows {
-        let json_str = status_json.ok_or(DbError::EmptyResult)?;
-        let parsed: Value = serde_json::from_str(&json_str)?;
-
-        if let Value::Array(arr) = parsed {
-            results.extend(arr);
-        } else {
-            results.push(parsed);
-        }
-    }
-    Ok(results)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_status_rows_ok() {
-        let rows = vec![(Some(r#"{"Status":"Success"}"#.to_string()),)];
-        let res = parse_status_rows(rows).unwrap();
-        assert_eq!(res.len(), 1);
-        assert_eq!(res[0]["Status"], "Success");
-    }
-
-    #[test]
-    fn test_parse_status_rows_array() {
-        let rows = vec![(Some(
-            r#"[{"Status":"Success"},{"Status":"Error"}]"#.to_string(),
-        ),)];
-        let res = parse_status_rows(rows).unwrap();
-        assert_eq!(res.len(), 2);
-        assert_eq!(res[0]["Status"], "Success");
-        assert_eq!(res[1]["Status"], "Error");
-    }
-
-    #[test]
-    fn test_parse_status_rows_empty_result() {
-        let rows = vec![(None,)];
-
-        assert!(matches!(parse_status_rows(rows), Err(DbError::EmptyResult)));
-    }
-
-    #[test]
-    fn test_parse_status_rows_invalid_json() {
-        let rows = vec![(Some("not json".to_string()),)];
-        assert!(matches!(parse_status_rows(rows), Err(DbError::Json(_))));
-    }
 
     #[tokio::test]
     async fn test_mssql_extract_error() {

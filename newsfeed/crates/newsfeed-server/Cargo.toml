@@ -19,28 +19,27 @@ tokio          = { workspace = true }
 tower          = { workspace = true }
 tower-http     = { workspace = true }
 tower_governor = { workspace = true }
-serde          = { workspace = true }
 serde_json     = { workspace = true }
 tracing        = { workspace = true }
 tracing-subscriber = { workspace = true }
 dotenvy        = { workspace = true }
 envy           = { workspace = true }
-thiserror      = { workspace = true }
-anyhow         = { workspace = true }
-futures        = { workspace = true }
-url            = { version = "2" }
-xxhash-rust = { version = "0.8", features = ["xxh64"] }
-utoipa = "5"
-async-trait = "0.1.89"
-sha2 = "0.11.0"
+xxhash-rust    = { workspace = true }
+utoipa         = { workspace = true }
+sha2           = { workspace = true }
+subtle         = { workspace = true }
 ipnet.workspace = true
 
 [dev-dependencies]
 axum-test      = "21.0.0"
-hex            = "0.4.3"
+hex            = { workspace = true }
 sqlx           = { workspace = true }
 testcontainers = "0.15"
 tokio          = { workspace = true }
+tiberius       = { workspace = true }
+tokio-util     = { workspace = true }
+bb8            = { workspace = true }
+bb8-tiberius   = { workspace = true }
 
 [lints]
 workspace = true

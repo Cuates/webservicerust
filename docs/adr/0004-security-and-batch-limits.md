@@ -17,9 +17,11 @@ To proactively protect the application resources:
 2. **Timing-Attack Resistance**: API Keys are now hashed via `SHA-256` upon application boot. The `ApiKeyLayer` hashes the incoming HTTP header and compares the hashes securely to mitigate side-channel timing attacks.
 3. **Batch Limits**: A strict `500-item` batch limit was enforced in the `newsfeed-service` payload validator for all bulk CUD (Create, Update, Delete) operations. Payloads exceeding this threshold are immediately rejected with a `HTTP 400 Bad Request`.
 4. **ETag Hashing**: Replaced `sha2` with `xxhash-rust` to significantly increase the performance of processing large JSON response ETags.
+5. **Strict Deserialization (`deny_unknown_fields`)**: All domain model structs used in request extraction enforce `#[serde(deny_unknown_fields)]`. Any request payload containing extra, unrecognized, or inflated JSON keys is rejected immediately during deserialization with a structured `VALIDATION_ERROR` (HTTP 422 Unprocessable Entity), preventing parameter injection and payload bloat.
 
 ## Consequences
 
 - Clients sending massive batches will now experience breaking `HTTP 400` errors if they do not chunk their requests into sets of 500 or fewer.
+- Clients sending payloads with extra or undocumented JSON properties will receive breaking `HTTP 422` validation errors.
 - The service will require less memory overhead per request, and the database connection pools will not be starved by single massive transactions.
 - API Key validations are heavily insulated from brute force due to the upstream IP rate limiter.

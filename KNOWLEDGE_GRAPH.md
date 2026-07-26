@@ -35,9 +35,10 @@ graph TD
 
 ## Conceptual Mappings
 - **Authentication**: `X-API-Key` HTTP Header -> `SHA-256` hash comparison -> `HashSet<String>` in `AppState`.
-- **Resiliency**: IP-based Rate Limiting (powered by `ip_extractor` secure proxy fallback) occurs *before* Auth to proactively drop malicious connections. All batch processing strictly limits arrays to `500` items.
+- **Resiliency**: IP-based Rate Limiting (powered by `ip_extractor` secure proxy fallback) occurs *before* Auth to proactively drop malicious connections. All batch processing strictly limits arrays to `500` items. Inbound JSON payloads enforce strict schema validation via `#[serde(deny_unknown_fields)]`.
 - **Database Routing**: `DATABASE_TARGET` env var -> Instantiates specific `DbPool` enum variant -> Routes to `postgres.rs`, `mariadb.rs`, or `mssql.rs`.
 - **Legacy Python**: `constants.py` -> `newsfeed-constants`; `newsfeedwebservice.py` -> `newsfeed-service` & `newsfeed-server`.
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> Structured JSON mapped to unified constants (e.g. `Code: "BAD_REQUEST"`).
+- **Dependency Hygiene**: Strict auditing via `cargo-machete` prevents unused crates across the workspace.
 - **Build System**: `cargo-make` (`Makefile.toml`) powers all cross-platform builds and checks.
 - **Continuous Integration**: GitHub Actions workflows execute `cargo make test-coverage` to strictly enforce minimum >99% line and function code coverage thresholds, and a separate `newsfeed-release.yml` pipeline automates cross-platform builds and artifact bundling on version tags.

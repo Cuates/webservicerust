@@ -13,6 +13,7 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             SortOrder::Asc => "asc",
@@ -37,6 +38,7 @@ pub struct ExtractParams {
 
 impl ExtractParams {
     /// Build an `ExtractParams` from a normalised (lowercase-keyed) query-param map.
+    #[must_use]
     pub fn from_map(map: &HashMap<String, String>) -> Self {
         Self {
             title: map.get("title").cloned(),
@@ -59,7 +61,7 @@ impl ExtractParams {
 
 /// Parameters passed to the insert/update/delete stored procedure.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CudParams {
     pub title: Option<String>,
     pub image_url: Option<String>,
@@ -143,6 +145,15 @@ mod tests {
     }
 
     #[test]
+    fn test_cud_params_deny_unknown_fields() {
+        let json_data = json!({
+            "title": "New Title",
+            "unknown_field": "bad"
+        });
+        assert!(serde_json::from_value::<CudParams>(json_data).is_err());
+    }
+
+    #[test]
     fn test_newsfeed_row_serialize() {
         let row = NewsFeedRow {
             titlereturn: Some("Test Row".to_string()),
@@ -156,5 +167,13 @@ mod tests {
         assert_eq!(serialized["title"], "Test Row");
         assert_eq!(serialized["image_url"], "http://image.url");
         assert!(serialized.get("feed_url").unwrap().is_null());
+    }
+
+    #[test]
+    fn test_cud_params_deny_unknown_fields_deserialization_failure() {
+        let json_str = r#"{"id": 1, "title": "Test", "illegal_attr": 123}"#;
+        let err = serde_json::from_str::<CudParams>(json_str)
+            .expect_err("deserialization must fail when unknown fields are present");
+        assert!(err.to_string().contains("unknown field"));
     }
 }

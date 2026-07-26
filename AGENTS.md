@@ -9,6 +9,7 @@ These rules apply universally to any AI agent operating within the `webserviceru
 ## 2. Compilation and Testing
 - If you modify Rust code, you MUST run `cargo make check` to verify your changes. Do not assume your code compiles.
 - Run `cargo make test-coverage` to ensure your new logic does not drop the coverage thresholds (>99% line and function coverage) below the CI-enforced limits.
+- Run `cargo machete` to verify zero unused crates across the workspace when modifying dependencies.
 - Fix all warnings (e.g., unused imports) before completing a task to maintain a clean CI pipeline.
 
 ## 3. Documentation Sync

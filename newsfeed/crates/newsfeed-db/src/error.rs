@@ -31,6 +31,6 @@ pub enum DbError {
 
 impl<E: std::fmt::Debug> From<bb8::RunError<E>> for DbError {
     fn from(e: bb8::RunError<E>) -> Self {
-        Self::MssqlPool(format!("{:?}", e))
+        Self::MssqlPool(format!("{e:?}"))
     }
 }

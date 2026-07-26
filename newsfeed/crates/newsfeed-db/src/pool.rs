@@ -1,7 +1,7 @@
 //! `AppState` and `DbPool` — shared application state injected into every
 //! Axum handler via `State<Arc<AppState>>`.
 
-use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool, time::Duration};
+use std::{sync::Arc, sync::atomic::AtomicBool, time::Duration};
 
 use newsfeed_config::{AppConfig, DatabaseConfig, DatabaseTarget};
 
@@ -56,12 +56,9 @@ pub struct AppState {
     /// Active database pool (only the configured target is initialised).
     pub db: DbPool,
 
-    /// Pre-parsed set of valid API keys loaded from `API_KEYS` env var.
-    /// Constant-time comparison is performed at the middleware layer.
-    pub api_keys: HashSet<String>,
-
-    /// Concurrency cap for batch CUD operations (`BATCH_CONCURRENCY_LIMIT`).
-    pub batch_concurrency_limit: usize,
+    /// Pre-decoded SHA-256 digests of valid API keys loaded from `API_KEYS` env var.
+    /// Constant-time comparison is performed at the middleware layer using `subtle::ConstantTimeEq`.
+    pub api_keys: Vec<[u8; 32]>,
 
     /// Cached database health status for zero-overhead /health probes.
     pub is_healthy: Arc<AtomicBool>,
@@ -73,15 +70,28 @@ impl AppState {
     /// - Reads `DATABASE_TARGET` and initialises only the matching pool.
     /// - Validates that `API_KEYS` contains at least one key (panics otherwise).
     /// - Applies pool-tuning env vars to sqlx and bb8 pools.
+    #[allow(clippy::too_many_lines)]
     pub async fn init(app_cfg: &AppConfig, db_cfg: &DatabaseConfig) -> Result<Self, DbError> {
         // ── Startup guard: refuse to start with zero API keys ─────────────────
-        let api_keys = app_cfg.api_keys_set();
-        if api_keys.is_empty() {
+        let api_keys_set = app_cfg.api_keys_set();
+        if api_keys_set.is_empty() {
             return Err(DbError::Config(
                 "API_KEYS must contain at least one key. \
                  Run scripts/generate-api-key.sh to generate one."
                     .into(),
             ));
+        }
+
+        let mut api_keys = Vec::with_capacity(api_keys_set.len());
+        for key_hex in &api_keys_set {
+            let mut buf = [0u8; 32];
+            hex::decode_to_slice(key_hex, &mut buf).map_err(|_| {
+                let prefix = if key_hex.len() > 8 { &key_hex[..8] } else { key_hex };
+                DbError::Config(format!(
+                    "API_KEYS contains malformed hex string (prefix '{prefix}...'). Must be 64 hex characters."
+                ))
+            })?;
+            api_keys.push(buf);
         }
 
         let acquire_timeout = Duration::from_secs(db_cfg.db_acquire_timeout_secs);
@@ -96,9 +106,11 @@ impl AppState {
                     .max_connections(db_cfg.db_pool_max)
                     .min_connections(db_cfg.db_pool_min)
                     .acquire_timeout(acquire_timeout)
-                    .idle_timeout(Duration::from_secs(300))
-                    .max_lifetime(Duration::from_secs(1800))
-                    .test_before_acquire(true)
+                    .idle_timeout(Duration::from_mins(5))
+                    // `test_before_acquire` adds a round-trip query (e.g. SELECT 1) before
+                    // handing out every pooled connection. With `max_lifetime` and `idle_timeout`
+                    // expiring stale connections, this extra overhead is unnecessary.
+                    .max_lifetime(Duration::from_mins(30))
                     .connect(url)
                     .await?;
                 tracing::info!(
@@ -117,9 +129,11 @@ impl AppState {
                     .max_connections(db_cfg.db_pool_max)
                     .min_connections(db_cfg.db_pool_min)
                     .acquire_timeout(acquire_timeout)
-                    .idle_timeout(Duration::from_secs(300))
-                    .max_lifetime(Duration::from_secs(1800))
-                    .test_before_acquire(true)
+                    .idle_timeout(Duration::from_mins(5))
+                    // `test_before_acquire` adds a round-trip query (e.g. SELECT 1) before
+                    // handing out every pooled connection. With `max_lifetime` and `idle_timeout`
+                    // expiring stale connections, this extra overhead is unnecessary.
+                    .max_lifetime(Duration::from_mins(30))
                     .connect(url)
                     .await?;
                 tracing::info!(
@@ -179,8 +193,8 @@ impl AppState {
                     .max_size(db_cfg.db_pool_max)
                     .min_idle(Some(db_cfg.db_pool_min))
                     .connection_timeout(acquire_timeout)
-                    .idle_timeout(Some(Duration::from_secs(300)))
-                    .max_lifetime(Some(Duration::from_secs(1800)))
+                    .idle_timeout(Some(Duration::from_mins(5)))
+                    .max_lifetime(Some(Duration::from_mins(30)))
                     .build(mgr)
                     .await
                     .map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
@@ -196,7 +210,6 @@ impl AppState {
         Ok(Self {
             db,
             api_keys,
-            batch_concurrency_limit: app_cfg.batch_concurrency_limit,
             is_healthy: Arc::new(AtomicBool::new(true)),
         })
     }
@@ -210,15 +223,19 @@ mod tests {
     use newsfeed_config::{AppConfig, DatabaseConfig, DatabaseTarget};
 
     fn postgres_app_cfg(api_keys: &str) -> AppConfig {
+        let keys_str = if api_keys == "test_key" {
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        } else {
+            api_keys
+        };
         AppConfig {
             bind_host: "127.0.0.1".to_string(),
             app_port: 8080,
             rust_log: "info".to_string(),
-            api_keys: api_keys.to_string(),
+            api_keys: keys_str.to_string(),
             allowed_origins: "*".to_string(),
             rate_limit_rps: 10,
             rate_limit_burst: 20,
-            batch_concurrency_limit: 5,
             trust_proxy: false,
             trusted_proxy_cidr: None,
         }
@@ -257,6 +274,52 @@ mod tests {
             Err(other) => panic!("expected DbError::Config, got: {other}"),
             Ok(_) => panic!("expected Err but got Ok"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_init_fails_with_malformed_hex_api_key() {
+        let app_cfg = postgres_app_cfg("invalid_hex_string_not_64_chars");
+        let db_cfg = postgres_db_cfg();
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(result.is_err(), "expected Err for malformed hex API key");
+        match result {
+            Err(DbError::Config(msg)) => {
+                assert!(msg.contains("malformed hex string"));
+            }
+            Err(other) => panic!("expected DbError::Config, got: {other}"),
+            Ok(_) => panic!("expected Err but got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_api_keys_multiple_valid_keys() {
+        let key1 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let key2 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+        let app_cfg = postgres_app_cfg(&format!("{key1}, {key2}"));
+        let db_cfg = postgres_db_cfg();
+
+        // Note: connecting will fail because postgres://fake is unreachable, but we can verify
+        // that if it fails with Sqlx/connection error, the API key validation stage passed!
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        if let Err(DbError::Config(msg)) = &result {
+            if msg.contains("malformed hex string") || msg.contains("API_KEYS must contain") {
+                panic!("API key validation failed unexpectedly: {msg}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_api_keys_invalid_hex_length() {
+        // 62 hex characters instead of 64
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd");
+        let db_cfg = postgres_db_cfg();
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(
+            matches!(result, Err(DbError::Config(msg)) if msg.contains("Must be 64 hex characters"))
+        );
     }
 
     // ── DbPool::ping error paths ──────────────────────────────────────────────

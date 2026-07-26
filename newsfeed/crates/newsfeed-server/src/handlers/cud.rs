@@ -15,7 +15,9 @@ use newsfeed_constants::{
 };
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, CudParams, FailedItem};
-use newsfeed_service::{cud_feed, payload_validator::validate_payload, validate_headers};
+use newsfeed_service::{
+    ServiceError, cud_feed, payload_validator::validate_payload, validate_headers,
+};
 
 use crate::extractors::AppJson;
 
@@ -103,10 +105,9 @@ async fn process_cud(
 ) -> axum::response::Response {
     // ── 1. Validate headers ───────────────────────────────────────────────────
     if let Err(e) = validate_headers(&headers, true) {
-        let status = if e.to_string().to_lowercase().contains("content") {
-            StatusCode::UNSUPPORTED_MEDIA_TYPE
-        } else {
-            StatusCode::BAD_REQUEST
+        let status = match e {
+            ServiceError::UnsupportedContentType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            _ => StatusCode::BAD_REQUEST,
         };
         return (
             status,
@@ -169,12 +170,18 @@ async fn process_cud(
         }
     }
 
-    let mut response = ApiResponse::success(ResponseMessage::PROCESSED, successes);
+    let msg = if !successes.is_empty() && !failed.is_empty() {
+        ResponseMessage::PARTIAL
+    } else {
+        ResponseMessage::PROCESSED
+    };
+    let mut response = ApiResponse::success(msg, successes);
     response.failed_items = failed;
 
-    // Batch Error Handling: If there is a partial failure, it should be a 400 bad request.
-    let status_code = if !response.failed_items.is_empty() {
+    let status_code = if response.result.is_empty() && !response.failed_items.is_empty() {
         StatusCode::BAD_REQUEST
+    } else if !response.failed_items.is_empty() {
+        StatusCode::OK
     } else if matches!(option_mode, OptionMode::InsertFeed) {
         StatusCode::CREATED
     } else {

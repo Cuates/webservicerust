@@ -1,7 +1,8 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::pedantic)]
+
 use axum::http::StatusCode;
 use axum_test::TestServer;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use newsfeed_config::AppConfig;
@@ -16,18 +17,15 @@ fn create_test_state() -> Arc<AppState> {
         .connect_lazy("postgres://fake:fake@255.255.255.255/fake")
         .expect("Failed to create lazy pool");
 
-    let mut api_keys = HashSet::new();
     let plaintext_key = "nf_test_key_123";
     let mut hasher = Sha256::new();
     hasher.update(plaintext_key.as_bytes());
-    let hash_hex = hex::encode(hasher.finalize());
-    api_keys.insert(hash_hex);
+    let hash_bytes: [u8; 32] = hasher.finalize().into();
 
     Arc::new(AppState {
         is_healthy: std::sync::atomic::AtomicBool::new(true).into(),
         db: DbPool::Postgres(fake_pool),
-        api_keys,
-        batch_concurrency_limit: 5,
+        api_keys: vec![hash_bytes],
     })
 }
 
@@ -42,7 +40,6 @@ fn create_test_server() -> TestServer {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
-        batch_concurrency_limit: 5,
     };
 
     let state = create_test_state();
@@ -77,7 +74,6 @@ async fn test_health_check() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
-        batch_concurrency_limit: 5,
     };
     let app = router::build(state, &cfg);
     let server = TestServer::new(app);
@@ -217,7 +213,6 @@ async fn test_rate_limiting() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 1,
         rate_limit_burst: 1, // Max 1 request
-        batch_concurrency_limit: 5,
     };
 
     let state = create_test_state();
@@ -284,7 +279,6 @@ async fn test_rate_limiting_precedence() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 1,
         rate_limit_burst: 1,
-        batch_concurrency_limit: 5,
     };
 
     let state = create_test_state();
@@ -340,41 +334,57 @@ async fn create_live_postgres_state(
     docker: &testcontainers::clients::Cli,
 ) -> (
     std::sync::Arc<AppState>,
-    testcontainers::Container<'_, testcontainers::GenericImage>,
+    Option<testcontainers::Container<'_, testcontainers::GenericImage>>,
 ) {
     use sqlx::Executor;
     use testcontainers::GenericImage;
 
-    let image = testcontainers::RunnableImage::from(
-        GenericImage::new("postgres", "15")
-            .with_env_var("POSTGRES_USER", "postgres")
-            .with_env_var("POSTGRES_PASSWORD", "postgres")
-            .with_env_var("POSTGRES_DB", "db")
-            .with_wait_for(testcontainers::core::WaitFor::message_on_stderr(
-                "database system is ready to accept connections",
-            )),
-    );
-    let node = docker.run(image);
-    let port = node.get_host_port_ipv4(5432);
-    let db_url = format!("postgres://postgres:postgres@localhost:{}/db", port);
+    let (db_url, node) = if let Ok(url) = std::env::var("TEST_POSTGRES_URL") {
+        (url, None)
+    } else {
+        let image = testcontainers::RunnableImage::from(
+            GenericImage::new("postgres", "15")
+                .with_env_var("POSTGRES_USER", "postgres")
+                .with_env_var("POSTGRES_PASSWORD", "postgres")
+                .with_env_var("POSTGRES_DB", "db")
+                .with_wait_for(testcontainers::core::WaitFor::message_on_stderr(
+                    "database system is ready to accept connections",
+                )),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(5432);
+        let url = format!("postgres://postgres:postgres@localhost:{}/db", port);
+        (url, Some(node))
+    };
 
     // ── 1. Schema init via a dedicated single-connection pool ─────────────────
-    // Running the large SQL batch on the same pool used by AppState can leave
-    // session-level state (e.g. search_path mutations) on a pooled connection.
-    // Using a separate pool here guarantees AppState starts with clean connections.
     {
-        let init_pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&db_url)
-            .await
-            .expect("Failed to connect init pool to test postgres");
+        let mut retries = 10;
+        let mut init_pool = None;
+        while retries > 0 {
+            match sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .connect(&db_url)
+                .await
+            {
+                Ok(p) => {
+                    init_pool = Some(p);
+                    break;
+                }
+                Err(e) => {
+                    println!("Postgres connect not ready yet, retrying... ({})", e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    retries -= 1;
+                }
+            }
+        }
+        let init_pool = init_pool.expect("Failed to connect init pool to test postgres");
         let sql = include_str!("../../newsfeed-db/tests/sql/init_postgres.sql")
             .trim_start_matches('\u{feff}');
         init_pool
             .execute(sql)
             .await
             .expect("Failed to execute schema");
-        // init_pool is dropped and all its connections closed here
     }
 
     use sha2::Digest;
@@ -392,7 +402,6 @@ async fn create_live_postgres_state(
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        batch_concurrency_limit: 5,
     };
 
     let db_cfg = newsfeed_config::DatabaseConfig {
@@ -411,17 +420,346 @@ async fn create_live_postgres_state(
         db_acquire_timeout_secs: 10,
     };
 
-    let state = newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg)
-        .await
-        .expect("Failed to init AppState");
+    let mut retries = 10;
+    let mut app_state = None;
+    while retries > 0 {
+        match newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg).await {
+            Ok(state) => {
+                app_state = Some(state);
+                break;
+            }
+            Err(e) => {
+                println!("Postgres AppState not ready yet, retrying... ({})", e);
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let state = app_state.expect("Failed to init AppState for Postgres");
 
     (std::sync::Arc::new(state), node)
+}
+
+async fn create_live_mariadb_state(
+    docker: &testcontainers::clients::Cli,
+) -> (
+    std::sync::Arc<AppState>,
+    Option<testcontainers::Container<'_, testcontainers::GenericImage>>,
+) {
+    use sqlx::Executor;
+    use testcontainers::GenericImage;
+
+    let (db_url, node) = if let Ok(url) = std::env::var("TEST_MARIADB_URL") {
+        (url, None)
+    } else {
+        let image = testcontainers::RunnableImage::from(
+            GenericImage::new("mariadb", "10.6")
+                .with_env_var("MYSQL_ROOT_PASSWORD", "root")
+                .with_env_var("MYSQL_DATABASE", "db")
+                .with_wait_for(testcontainers::core::WaitFor::message_on_stderr(
+                    "ready for connections",
+                )),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(3306);
+        let url = format!("mysql://root:root@localhost:{}/db", port);
+        (url, Some(node))
+    };
+
+    {
+        let mut retries = 10;
+        let mut init_pool = None;
+        while retries > 0 {
+            match sqlx::mysql::MySqlPoolOptions::new()
+                .max_connections(1)
+                .connect(&db_url)
+                .await
+            {
+                Ok(p) => {
+                    init_pool = Some(p);
+                    break;
+                }
+                Err(e) => {
+                    println!("MariaDB connect not ready yet, retrying... ({})", e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    retries -= 1;
+                }
+            }
+        }
+        let init_pool = init_pool.expect("Failed to connect init pool to test mariadb");
+
+        let schema =
+            include_str!("../../newsfeed-db/migrations/mariadb/20260718000000_init_mariadb.sql");
+        let schema = schema
+            .trim_start_matches('\u{feff}')
+            .replace("DEFINER=`gojeda`@`%`", "");
+
+        let mut current_delimiter = ";";
+        let mut buffer = String::new();
+        let mut conn = init_pool.acquire().await.unwrap();
+
+        for line in schema.lines() {
+            if line.starts_with("DELIMITER ") {
+                current_delimiter = line.trim_start_matches("DELIMITER ").trim();
+                continue;
+            }
+            buffer.push_str(line);
+            buffer.push('\n');
+
+            if line.trim().ends_with(current_delimiter) {
+                let stmt = buffer
+                    .trim_end_matches('\n')
+                    .trim_end_matches(current_delimiter)
+                    .trim();
+                if !stmt.is_empty() {
+                    conn.execute(stmt)
+                        .await
+                        .expect("Failed to execute mariadb statement");
+                }
+                buffer.clear();
+            }
+        }
+
+        if !buffer.trim().is_empty() {
+            conn.execute(buffer.as_str())
+                .await
+                .expect("Failed to execute mariadb statement");
+        }
+    }
+
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"nf_test_key_123");
+    let hashed_key = hex::encode(hasher.finalize());
+
+    let app_cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 8080,
+        rust_log: "info".to_string(),
+        api_keys: hashed_key,
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 10,
+        rate_limit_burst: 20,
+    };
+
+    let db_cfg = newsfeed_config::DatabaseConfig {
+        database_target: newsfeed_config::DatabaseTarget::MariaDb,
+        postgres_url: None,
+        mariadb_url: Some(db_url),
+        mssql_host: None,
+        mssql_port: None,
+        mssql_database: None,
+        mssql_username: None,
+        mssql_password: None,
+        db_mssql_encrypt: false,
+        db_mssql_trust_cert: false,
+        db_pool_max: 2,
+        db_pool_min: 1,
+        db_acquire_timeout_secs: 10,
+    };
+
+    let mut retries = 10;
+    let mut app_state = None;
+    while retries > 0 {
+        match newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg).await {
+            Ok(state) => {
+                app_state = Some(state);
+                break;
+            }
+            Err(e) => {
+                println!("MariaDB AppState not ready yet, retrying... ({})", e);
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let state = app_state.expect("Failed to init AppState for MariaDB");
+
+    (std::sync::Arc::new(state), node)
+}
+
+async fn execute_mssql_script_str(
+    client: &mut tiberius::Client<tokio_util::compat::Compat<tokio::net::TcpStream>>,
+    script: &str,
+) {
+    let mut batch = String::new();
+    for line in script.lines() {
+        if line.trim().eq_ignore_ascii_case("GO") {
+            if !batch.trim().is_empty() {
+                client.simple_query(&batch).await.unwrap();
+                batch.clear();
+            }
+        } else {
+            batch.push_str(line);
+            batch.push('\n');
+        }
+    }
+    if !batch.trim().is_empty() {
+        client.simple_query(&batch).await.unwrap();
+    }
+}
+
+async fn create_live_mssql_state(
+    docker: &testcontainers::clients::Cli,
+) -> (
+    std::sync::Arc<AppState>,
+    Option<testcontainers::Container<'_, testcontainers::GenericImage>>,
+) {
+    use testcontainers::GenericImage;
+    use tiberius::{AuthMethod, Client, Config};
+    use tokio::net::TcpStream;
+    use tokio_util::compat::TokioAsyncWriteCompatExt;
+
+    let (host, port, user, pass, db, node) = if let Ok(port_str) = std::env::var("TEST_MSSQL_PORT")
+    {
+        let port = port_str.parse::<u16>().unwrap_or(1433);
+        let host = std::env::var("TEST_MSSQL_HOST").unwrap_or_else(|_| "localhost".to_string());
+        let user = std::env::var("TEST_MSSQL_USER").unwrap_or_else(|_| "SA".to_string());
+        let pass =
+            std::env::var("TEST_MSSQL_PASSWORD").unwrap_or_else(|_| "Password123!".to_string());
+        let db = std::env::var("TEST_MSSQL_DB").unwrap_or_else(|_| "media".to_string());
+        (host, port, user, pass, db, None)
+    } else if let Ok(_url_str) = std::env::var("TEST_MSSQL_URL") {
+        (
+            "localhost".to_string(),
+            1433,
+            "SA".to_string(),
+            "Password123!".to_string(),
+            "media".to_string(),
+            None,
+        )
+    } else {
+        let image = testcontainers::RunnableImage::from(
+            GenericImage::new("mcr.microsoft.com/mssql/server", "2022-latest")
+                .with_env_var("ACCEPT_EULA", "Y")
+                .with_env_var("MSSQL_SA_PASSWORD", "Password123!")
+                .with_wait_for(testcontainers::core::WaitFor::message_on_stdout(
+                    "Service Broker manager has started",
+                )),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(1433);
+        (
+            "localhost".to_string(),
+            port,
+            "SA".to_string(),
+            "Password123!".to_string(),
+            "media".to_string(),
+            Some(node),
+        )
+    };
+
+    {
+        let mut config = Config::new();
+        config.host(&host);
+        config.port(port);
+        config.authentication(AuthMethod::sql_server(&user, &pass));
+        config.trust_cert();
+
+        let mut retries = 20;
+        let mut client_res = None;
+        while retries > 0 {
+            match TcpStream::connect(config.get_addr()).await {
+                Ok(tcp) => {
+                    tcp.set_nodelay(true).unwrap();
+                    match Client::connect(config.clone(), tcp.compat_write()).await {
+                        Ok(client) => {
+                            client_res = Some(client);
+                            break;
+                        }
+                        Err(e) => {
+                            println!("MSSQL TDS not ready yet, retrying... ({})", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("MSSQL TCP not ready yet, retrying... ({})", e);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            retries -= 1;
+        }
+        let mut client = client_res.expect("Failed to connect to mssql after retries");
+
+        let schema =
+            include_str!("../../newsfeed-db/migrations/mssql/20260718000000_init_mssql.sql")
+                .trim_start_matches('\u{feff}');
+        execute_mssql_script_str(&mut client, schema).await;
+    }
+
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"nf_test_key_123");
+    let hashed_key = hex::encode(hasher.finalize());
+
+    let app_cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 8080,
+        rust_log: "info".to_string(),
+        api_keys: hashed_key,
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 10,
+        rate_limit_burst: 20,
+    };
+
+    let db_cfg = newsfeed_config::DatabaseConfig {
+        database_target: newsfeed_config::DatabaseTarget::MsSql,
+        postgres_url: None,
+        mariadb_url: None,
+        mssql_host: Some(host),
+        mssql_port: Some(port),
+        mssql_database: Some(db),
+        mssql_username: Some(user),
+        mssql_password: Some(pass),
+        db_mssql_encrypt: false,
+        db_mssql_trust_cert: true,
+        db_pool_max: 2,
+        db_pool_min: 1,
+        db_acquire_timeout_secs: 10,
+    };
+
+    let mut retries = 10;
+    let mut app_state = None;
+    while retries > 0 {
+        match newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg).await {
+            Ok(state) => {
+                app_state = Some(state);
+                break;
+            }
+            Err(e) => {
+                println!("MSSQL AppState not ready yet, retrying... ({})", e);
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                retries -= 1;
+            }
+        }
+    }
+    let state = app_state.expect("Failed to init AppState for MSSQL");
+
+    (std::sync::Arc::new(state), node)
+}
+
+async fn create_live_state(
+    docker: &testcontainers::clients::Cli,
+) -> (
+    std::sync::Arc<AppState>,
+    Option<testcontainers::Container<'_, testcontainers::GenericImage>>,
+) {
+    let target = std::env::var("DATABASE_TARGET").unwrap_or_else(|_| "postgres".to_string());
+    match target.to_lowercase().as_str() {
+        "mariadb" | "mysql" => create_live_mariadb_state(docker).await,
+        "mssql" | "sqlserver" => create_live_mssql_state(docker).await,
+        _ => create_live_postgres_state(docker).await,
+    }
 }
 
 #[tokio::test]
 async fn test_health_check_live_db() {
     let docker = testcontainers::clients::Cli::default();
-    let (state, _node) = create_live_postgres_state(&docker).await;
+    let (state, _node) = create_live_state(&docker).await;
 
     let cfg = AppConfig {
         trust_proxy: false,
@@ -433,7 +771,6 @@ async fn test_health_check_live_db() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
-        batch_concurrency_limit: 5,
     };
 
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
@@ -453,9 +790,9 @@ async fn test_health_check_live_db() {
 }
 
 #[tokio::test]
-async fn test_postgres_crud_lifecycle() {
+async fn test_db_crud_lifecycle() {
     let docker = testcontainers::clients::Cli::default();
-    let (state, _node) = create_live_postgres_state(&docker).await;
+    let (state, _node) = create_live_state(&docker).await;
 
     let cfg = AppConfig {
         trust_proxy: false,
@@ -467,7 +804,6 @@ async fn test_postgres_crud_lifecycle() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
-        batch_concurrency_limit: 5,
     };
 
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
@@ -854,9 +1190,9 @@ async fn test_get_invalid_accept_header() {
 }
 
 #[tokio::test]
-async fn test_postgres_partial_failure() {
+async fn test_db_partial_failure() {
     let docker = testcontainers::clients::Cli::default();
-    let (state, _node) = create_live_postgres_state(&docker).await;
+    let (state, _node) = create_live_state(&docker).await;
     let cfg = AppConfig {
         trust_proxy: false,
         trusted_proxy_cidr: None,
@@ -867,7 +1203,6 @@ async fn test_postgres_partial_failure() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
-        batch_concurrency_limit: 5,
     };
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
         |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
@@ -925,4 +1260,207 @@ async fn test_postgres_partial_failure() {
             .map(|a| !a.is_empty())
             .unwrap_or(false)
     );
+}
+
+#[tokio::test]
+async fn test_db_true_partial_success() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+    let api_key = "nf_test_key_123";
+    let accept = axum::http::header::ACCEPT;
+    let accept_val = axum::http::header::HeaderValue::from_static("application/json");
+    let content_type = axum::http::header::CONTENT_TYPE;
+    let content_type_val =
+        axum::http::header::HeaderValue::from_static("application/json; charset=utf-8");
+
+    // POST two feeds: feed1 (missing feed_url -> error) and feed2 (valid -> success)
+    let post_resp = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(accept.clone(), accept_val.clone())
+        .add_header(content_type.clone(), content_type_val.clone())
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([
+                {
+                    "title": "Feed One (Invalid)",
+                    "publish_date": "2026-07-23 00:00:00"
+                },
+                {
+                    "title": "Feed Two (Valid)",
+                    "feed_url": "http://example.com/feed2",
+                    "publish_date": "2026-07-23 01:00:00"
+                }
+            ]))
+            .unwrap(),
+        ))
+        .await;
+
+    let body: serde_json::Value = post_resp.json();
+    assert_eq!(body["Status"], "Success");
+    assert_eq!(body["Message"], "Partial");
+    assert_eq!(body["Result"].as_array().unwrap().len(), 1);
+    assert_eq!(body["FailedItems"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn test_cud_endpoint_unsupported_content_type() {
+    let server = create_test_server();
+    let valid_api_key = "nf_test_key_123";
+
+    let response = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(valid_api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("content-type"),
+            axum::http::header::HeaderValue::from_static("text/plain"),
+        )
+        .text("not json")
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "INVALID_HEADER");
+}
+
+#[tokio::test]
+async fn test_cud_endpoint_deny_unknown_fields_http_400() {
+    let server = create_test_server();
+    let valid_api_key = "nf_test_key_123";
+
+    let response = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(valid_api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("content-type"),
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({
+                "title": "Valid Title",
+                "unknown_param": "illegal field value"
+            }))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn test_cud_endpoint_partial_batch_failure_response() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+    let api_key = "nf_test_key_123";
+
+    let post_resp = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("content-type"),
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([
+                {
+                    "title": "TC8 Invalid Item",
+                    "publish_date": "2026-07-23 00:00:00"
+                },
+                {
+                    "title": "TC8 Valid Item",
+                    "feed_url": "http://example.com/tc8",
+                    "publish_date": "2026-07-23 01:00:00"
+                }
+            ]))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(post_resp.status_code(), StatusCode::OK);
+    let body: serde_json::Value = post_resp.json();
+    assert_eq!(body["Status"], "Success");
+    assert_eq!(body["Message"], "Partial");
+    assert_eq!(body["Result"].as_array().unwrap().len(), 1);
+    assert_eq!(body["FailedItems"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn test_not_found_handler_structure() {
+    let server = create_test_server();
+    let response = server.get("/api/non/existent/path/for/tc9").await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "ERROR");
+    assert_eq!(body["Message"], "Not Found");
+    assert_eq!(body["Count"], 0);
+    assert_eq!(body["Result"].as_array().unwrap().len(), 0);
 }

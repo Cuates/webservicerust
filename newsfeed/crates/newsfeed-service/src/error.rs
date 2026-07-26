@@ -7,6 +7,9 @@ pub enum ServiceError {
     #[error("Invalid header: {0}")]
     InvalidHeader(String),
 
+    #[error("Unsupported content type: {0}")]
+    UnsupportedContentType(String),
+
     #[error("Invalid payload: {0}")]
     InvalidPayload(String),
 

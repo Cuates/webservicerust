@@ -2,7 +2,6 @@
 //! from `newsfeedwebserviceclass.py`.
 
 use axum::http::HeaderMap;
-use std::collections::HashMap;
 
 use newsfeed_constants::http::{HeaderType, PossibleHeaderType};
 use newsfeed_models::CudParams;
@@ -45,10 +44,12 @@ pub fn validate_headers(headers: &HeaderMap, requires_body: bool) -> Result<(), 
             .unwrap_or_default();
 
         if content_type != PossibleHeaderType::CONTENT_TYPE {
-            return Err(ServiceError::InvalidHeader("Content type invalid".into()));
+            return Err(ServiceError::UnsupportedContentType(
+                "Content type invalid".into(),
+            ));
         }
         if charset != PossibleHeaderType::CHARSET {
-            return Err(ServiceError::InvalidHeader(
+            return Err(ServiceError::UnsupportedContentType(
                 "Content-Type charset invalid".into(),
             ));
         }
@@ -58,12 +59,6 @@ pub fn validate_headers(headers: &HeaderMap, requires_body: bool) -> Result<(), 
 }
 
 // ── Payload validation ────────────────────────────────────────────────────────
-
-/// Validate GET / QUERY query parameters (no mandatory params for reads).
-pub fn validate_get_params(raw: &HashMap<String, String>) -> HashMap<String, String> {
-    // Keys are expected to match ExtractParams field names exactly (snake_case).
-    raw.clone()
-}
 
 /// Validate POST / PUT / DELETE JSON body.
 ///
@@ -96,7 +91,7 @@ pub fn validate_payload(
 
     let mut validated: Vec<CudParams> = Vec::with_capacity(items.len());
 
-    for item in items.into_iter() {
+    for item in items {
         // Check all mandatory fields are present and non-null.
         for &key in mandatory {
             match item.get(key) {
@@ -151,7 +146,10 @@ mod tests {
         );
 
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -166,7 +164,10 @@ mod tests {
             HeaderValue::from_static("application/json; charset=utf-16"),
         );
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -181,7 +182,10 @@ mod tests {
             HeaderValue::from_static("application/json; charset"),
         );
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -196,7 +200,10 @@ mod tests {
             HeaderValue::from_static("application/json"),
         );
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -223,12 +230,11 @@ mod tests {
     #[test]
     fn test_validate_payload_valid_object() {
         let payload = json!({
-            "id": 1,
-            "feed_id": "test_feed",
-            "name": "Test"
+            "title": "Test",
+            "feed_url": "http://example.com/feed"
         });
 
-        let result = validate_payload(payload, &["feed_id"]);
+        let result = validate_payload(payload, &["title"]);
         assert!(result.is_ok());
         let items = result.unwrap();
         assert_eq!(items.len(), 1);
@@ -237,11 +243,11 @@ mod tests {
     #[test]
     fn test_validate_payload_valid_array() {
         let payload = json!([
-            { "id": 1, "feed_id": "test_feed_1" },
-            { "id": 2, "feed_id": "test_feed_2" }
+            { "title": "Test 1", "feed_url": "http://example.com/1" },
+            { "title": "Test 2", "feed_url": "http://example.com/2" }
         ]);
 
-        let result = validate_payload(payload, &["feed_id"]);
+        let result = validate_payload(payload, &["title"]);
         assert!(result.is_ok());
         let items = result.unwrap();
         assert_eq!(items.len(), 2);
@@ -279,15 +285,6 @@ mod tests {
 
         let result = validate_payload(payload, &[]);
         assert!(matches!(result, Err(ServiceError::InvalidPayload(_))));
-    }
-
-    #[test]
-    fn test_validate_get_params() {
-        let mut query = HashMap::new();
-        query.insert("feed_id".to_string(), "test_feed".to_string());
-
-        let params = validate_get_params(&query);
-        assert_eq!(params.get("feed_id").unwrap(), "test_feed");
     }
 
     #[test]
@@ -340,7 +337,10 @@ mod tests {
             HeaderValue::from_static("application/json; charset=latin-1"),
         );
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -356,7 +356,10 @@ mod tests {
             HeaderValue::from_static("text/plain; charset=utf-8"),
         );
         let result = validate_headers(&headers, true);
-        assert!(matches!(result, Err(ServiceError::InvalidHeader(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::UnsupportedContentType(_))
+        ));
     }
 
     #[test]
@@ -367,19 +370,17 @@ mod tests {
         for _ in 0..501 {
             items.push(json!({
                 "title": "t",
-                "imageurl": "i",
-                "feedurl": "f",
-                "actualurl": "a",
-                "publishdate": "p"
+                "image_url": "i",
+                "feed_url": "f",
+                "actual_url": "a",
+                "publish_date": "p"
             }));
         }
         let payload = json!(items);
-        let result = validate_payload(payload, &[]);
-        match result {
-            Err(ServiceError::InvalidPayload(msg)) => {
-                assert_eq!(msg, "Payload exceeds batch limit of 500 items");
-            }
-            _ => panic!("Expected InvalidPayload batch limit error"),
-        }
+        let err = validate_payload(payload, &[]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid payload: Payload exceeds batch limit of 500 items"
+        );
     }
 }

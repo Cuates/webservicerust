@@ -11,7 +11,6 @@
 /// - `ALLOWED_ORIGINS`          — comma-separated list of allowed CORS origins
 /// - `RATE_LIMIT_RPS`           — token-bucket replenish rate (requests/sec per IP)
 /// - `RATE_LIMIT_BURST`         — token-bucket burst capacity
-/// - `BATCH_CONCURRENCY_LIMIT`  — max parallel DB futures per batch CUD request (default: 5)
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct AppConfig {
     /// TCP bind address (e.g. `127.0.0.1` or `0.0.0.0`).
@@ -40,20 +39,12 @@ pub struct AppConfig {
     #[serde(default = "default_burst")]
     pub rate_limit_burst: u32,
 
-    /// Maximum number of concurrent database futures when processing a batch
-    /// CUD request (POST/PUT/DELETE with multiple items).
-    ///
-    /// Caps parallelism to avoid exhausting the connection pool.
-    /// Environment variable: `BATCH_CONCURRENCY_LIMIT` (default: 5)
-    #[serde(default = "default_batch_concurrency")]
-    pub batch_concurrency_limit: usize,
-
     /// Whether to trust X-Forwarded-For proxy headers.
     #[serde(default = "default_false")]
     pub trust_proxy: bool,
 
     /// Optional comma-separated CIDR blocks for trusted proxies (e.g. 10.0.0.0/8).
-    /// If trust_proxy=true but this is empty, defaults to 127.0.0.1/32, ::1/128.
+    /// If `trust_proxy=true` but this is empty, defaults to 127.0.0.1/32, `::1/128`.
     pub trusted_proxy_cidr: Option<String>,
 }
 
@@ -63,6 +54,7 @@ fn default_false() -> bool {
 
 impl AppConfig {
     /// Parse `allowed_origins` into a `Vec<String>`.
+    #[must_use]
     pub fn origins_vec(&self) -> Vec<String> {
         self.allowed_origins
             .split(',')
@@ -72,6 +64,8 @@ impl AppConfig {
     }
 
     /// Parse `trusted_proxy_cidr` into a vector of `ipnet::IpNet`.
+    #[must_use]
+    #[allow(clippy::expect_used)]
     pub fn proxy_cidrs(&self) -> Vec<ipnet::IpNet> {
         match &self.trusted_proxy_cidr {
             Some(cidr_str) if !cidr_str.trim().is_empty() => cidr_str
@@ -80,12 +74,16 @@ impl AppConfig {
                 .collect(),
             _ => {
                 // Default to localhost loopback CIDRs if proxy is trusted but no CIDR given
-                vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()]
+                vec![
+                    "127.0.0.1/32".parse().expect("hardcoded literal"),
+                    "::1/128".parse().expect("hardcoded literal"),
+                ]
             }
         }
     }
 
     /// Parse `api_keys` into a `std::collections::HashSet<String>`.
+    #[must_use]
     pub fn api_keys_set(&self) -> std::collections::HashSet<String> {
         self.api_keys
             .split(',')
@@ -110,9 +108,6 @@ fn default_rps() -> u64 {
 fn default_burst() -> u32 {
     30
 }
-fn default_batch_concurrency() -> usize {
-    5
-}
 
 #[cfg(test)]
 mod tests {
@@ -127,7 +122,6 @@ mod tests {
             allowed_origins: allowed_origins.to_owned(),
             rate_limit_rps: 10,
             rate_limit_burst: 30,
-            batch_concurrency_limit: 5,
             trust_proxy: false,
             trusted_proxy_cidr: None,
         }
@@ -186,7 +180,6 @@ mod tests {
         assert_eq!(cfg.app_port, 4815);
         assert_eq!(cfg.rate_limit_rps, 10);
         assert_eq!(cfg.rate_limit_burst, 30);
-        assert_eq!(cfg.batch_concurrency_limit, 5);
     }
 
     #[test]
@@ -201,7 +194,6 @@ mod tests {
         assert_eq!(config.rust_log, "info");
         assert_eq!(config.rate_limit_rps, 10);
         assert_eq!(config.rate_limit_burst, 30);
-        assert_eq!(config.batch_concurrency_limit, 5);
         assert!(config.api_keys.is_empty());
         assert!(config.allowed_origins.is_empty());
     }
@@ -217,7 +209,6 @@ mod tests {
         assert_eq!(config.rust_log, "info");
         assert_eq!(config.rate_limit_rps, 10);
         assert_eq!(config.rate_limit_burst, 30);
-        assert_eq!(config.batch_concurrency_limit, 5);
         assert!(config.api_keys.is_empty());
         assert!(config.allowed_origins.is_empty());
         assert!(!config.trust_proxy);

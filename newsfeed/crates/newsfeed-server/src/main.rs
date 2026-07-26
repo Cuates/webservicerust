@@ -16,7 +16,7 @@
 
 #![allow(clippy::expect_used)]
 
-use newsfeed_server::router;
+use newsfeed_server::{router, shutdown::shutdown_signal};
 use std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -65,10 +65,9 @@ async fn main() {
     init_tracing(&app_cfg.rust_log);
 
     tracing::info!(
-        port  = app_cfg.app_port,
-        host  = %app_cfg.bind_host,
-        db    = %db_cfg.database_target,
-        batch_concurrency_limit = app_cfg.batch_concurrency_limit,
+        port = app_cfg.app_port,
+        host = %app_cfg.bind_host,
+        db   = %db_cfg.database_target,
         "Starting newsfeed-server"
     );
 
@@ -131,48 +130,4 @@ fn init_tracing(rust_log: &str) {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(rust_log)))
         .with(tracing_subscriber::fmt::layer())
         .init();
-}
-
-// ── Graceful shutdown ─────────────────────────────────────────────────────────
-
-async fn shutdown_signal() {
-    use tokio::signal;
-
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(windows)]
-    let terminate = async {
-        let mut ctrl_close =
-            signal::windows::ctrl_close().expect("Failed to install Ctrl+Close handler");
-        let mut ctrl_break =
-            signal::windows::ctrl_break().expect("Failed to install Ctrl+Break handler");
-        let mut ctrl_shutdown =
-            signal::windows::ctrl_shutdown().expect("Failed to install Ctrl+Shutdown handler");
-
-        tokio::select! {
-            _ = ctrl_close.recv() => {}
-            _ = ctrl_break.recv() => {}
-            _ = ctrl_shutdown.recv() => {}
-        }
-    };
-
-    #[cfg(not(any(unix, windows)))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        () = ctrl_c    => { tracing::info!("Received Ctrl+C, shutting down"); }
-        () = terminate => { tracing::info!("Received OS termination signal, shutting down"); }
-    }
 }

@@ -4,6 +4,11 @@
 //! The application panics fast with a descriptive message if any required
 //! variable is absent or cannot be parsed — no silent defaults for secrets.
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, clippy::expect_used, clippy::pedantic)
+)]
+
 pub mod app_config;
 pub mod db_config;
 

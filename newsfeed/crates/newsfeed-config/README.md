@@ -10,4 +10,5 @@ Instead of using `std::env::var` dynamically at runtime, this crate leverages th
 
 - **Early Panics**: Validates that all required environment variables (e.g., `API_KEYS`, `DATABASE_TARGET`) are present at startup, preventing missing-config panics deep in the application runtime.
 - **Type Safety**: Automatically parses primitive types like `u64` (for rate limits, MSSQL idle timeouts, and connection pool limits) and sets sane defaults using `serde` default annotations.
+- **Connection Pool Tuning**: Manages configurable parameters for connection pool sizing, acquisition timeouts, and MSSQL idle connection recycling.
 - **Sub-Configs**: Provides granular configuration blocks (like `DatabaseConfig`) for clean dependency injection into other crates.

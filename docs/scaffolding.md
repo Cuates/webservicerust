@@ -8,6 +8,7 @@ This guide explains how to set up the Newsfeed web service for local development
 - **Docker**: Required by `testcontainers` to dynamically provision databases during automated tests, or for running manual test databases.
 - **A Target Database**: PostgreSQL, MariaDB, or MSSQL.
 - **`cargo-llvm-cov`** *(Optional)*: Required only if you want to generate code coverage reports. Install globally via `cargo install cargo-llvm-cov`.
+- **`cargo-machete`** *(Optional)*: Required if you want to audit and prune unused crate dependencies locally. Install globally via `cargo install cargo-machete`.
 
 ## 2. Environment Configuration
 
@@ -19,8 +20,9 @@ The application requires environment variables to run.
    ```
 
 2. Edit `.env` to configure your target database:
-   - `DATABASE_TARGET`: Set this to `postgres`, `mariadb`, or `mssql`.
+   - `DATABASE_TARGET`: Set this to `postgres`, `mariadb`, or `mssql`. You can also switch targets quickly using `cargo make use-postgres`, `cargo make use-mariadb`, or `cargo make use-mssql`.
    - Update the respective connection string (`POSTGRES_DB_URL`, `MARIADB_DB_URL`, or `MSSQL_DB_URL`).
+   - To test against live databases without `testcontainers`, set `TEST_POSTGRES_URL`, `TEST_MARIADB_URL`, or `TEST_MSSQL_URL` (and `TEST_MSSQL_PORT`).
    - Configure `RATE_LIMIT_RPS` and `RATE_LIMIT_BURST` if defaults aren't suitable.
 
 ## 3. Generating API Keys
@@ -39,7 +41,7 @@ We provide cross-platform scripts to securely generate keys and append them dire
 .\scripts\generate-api-key.ps1
 ```
 
-You can view or revoke active keys securely using the `revoke-api-key` script in the same folder.
+You can view or revoke active keys securely using the `revoke-api-key` script in the same folder. Alternatively, use `cargo make key-gen` and `cargo make key-revoke`.
 
 ## 4. Building, Testing, and Running Locally
 
@@ -48,6 +50,9 @@ To build and test the workspace locally without Docker, we use `cargo-make` shor
 ```bash
 # Check compilation across all workspace crates
 cargo make check
+
+# Audit dependency tree for unused crates
+cargo machete
 
 # Run the test suite (testcontainers will automatically provision ephemeral PostgreSQL, MariaDB, and MSSQL databases for you!)
 cargo make test

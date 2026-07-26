@@ -59,7 +59,6 @@ pub async fn cud_feed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -69,8 +68,7 @@ mod tests {
             .expect("lazy pool creation must not fail");
         Arc::new(AppState {
             db: DbPool::Postgres(pool),
-            api_keys: HashSet::new(),
-            batch_concurrency_limit: 1,
+            api_keys: Vec::new(),
             is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
@@ -81,8 +79,7 @@ mod tests {
             .expect("lazy pool creation must not fail");
         Arc::new(AppState {
             db: DbPool::MariaDb(pool),
-            api_keys: HashSet::new(),
-            batch_concurrency_limit: 1,
+            api_keys: Vec::new(),
             is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
@@ -105,8 +102,7 @@ mod tests {
 
         Arc::new(AppState {
             db: DbPool::MsSql(pool),
-            api_keys: HashSet::new(),
-            batch_concurrency_limit: 1,
+            api_keys: Vec::new(),
             is_healthy: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }

@@ -46,10 +46,21 @@ impl KeyExtractor for SecureIpExtractor {
 
         if let Some(forwarded) = req.headers().get("x-forwarded-for")
             && let Ok(forwarded_str) = forwarded.to_str()
-            && let Some(first_ip) = forwarded_str.split(',').next()
-            && let Ok(ip) = first_ip.trim().parse::<IpAddr>()
         {
-            return Ok(ip);
+            let mut rightmost_untrusted: Option<IpAddr> = None;
+            for ip_str in forwarded_str.split(',').rev() {
+                if let Ok(ip) = ip_str.trim().parse::<IpAddr>() {
+                    let is_trusted_proxy = self.trusted_cidrs.iter().any(|cidr| cidr.contains(&ip));
+                    if !is_trusted_proxy {
+                        rightmost_untrusted = Some(ip);
+                        break;
+                    }
+                    rightmost_untrusted = Some(ip);
+                }
+            }
+            if let Some(ip) = rightmost_untrusted {
+                return Ok(ip);
+            }
         }
 
         if let Some(real_ip) = req.headers().get("x-real-ip")
@@ -105,6 +116,28 @@ mod tests {
             8080,
         )));
         let ip = extractor.extract(&req).unwrap();
+        // Since 70.41.3.18 is untrusted (not in 10.0.0.0/8), rightmost-untrusted returns 70.41.3.18
+        assert_eq!(
+            ip,
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(70, 41, 3, 18))
+        );
+    }
+
+    #[test]
+    fn test_secure_ip_extractor_x_forwarded_for_rightmost_untrusted() {
+        let cidr = "10.0.0.0/8".parse().unwrap();
+        let extractor = SecureIpExtractor::new(true, vec![cidr]);
+        // Attacker attempts to spoof 1.2.3.4; real client IP is 203.0.113.195;
+        // 10.0.0.5 is an internal CDN/proxy.
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "1.2.3.4, 203.0.113.195, 10.0.0.5")
+            .body(())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            8080,
+        )));
+        let ip = extractor.extract(&req).unwrap();
         assert_eq!(
             ip,
             std::net::IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 195))
@@ -143,6 +176,45 @@ mod tests {
         assert_eq!(
             ip,
             std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1))
+        );
+    }
+
+    #[test]
+    fn test_secure_ip_extractor_x_forwarded_for_all_trusted() {
+        let cidr = "10.0.0.0/8".parse().unwrap();
+        let extractor = SecureIpExtractor::new(true, vec![cidr]);
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "10.0.0.5, 10.0.0.6")
+            .body(())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            8080,
+        )));
+        let ip = extractor.extract(&req).unwrap();
+        assert_eq!(
+            ip,
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 5))
+        );
+    }
+
+    #[test]
+    fn test_secure_ip_extractor_x_forwarded_for_invalid_fallback_to_real_ip() {
+        let cidr = "10.0.0.0/8".parse().unwrap();
+        let extractor = SecureIpExtractor::new(true, vec![cidr]);
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "invalid_ip_string")
+            .header("x-real-ip", "203.0.113.195")
+            .body(())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            8080,
+        )));
+        let ip = extractor.extract(&req).unwrap();
+        assert_eq!(
+            ip,
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 195))
         );
     }
 }

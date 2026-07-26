@@ -19,9 +19,10 @@ We will use the `testcontainers` crate to programmatically provision fully isola
 3. **Automated Teardown**: `testcontainers` utilizes the `Drop` trait to automatically stop and remove the containers once the tests conclude or if a panic occurs, guaranteeing no orphaned processes.
 4. **Active Connection Polling**: To circumvent startup race conditions inherent to container lifecycles (where a database engine logs that it is "ready" before actually opening its TCP socket), tests will employ a dynamic retry loop to repeatedly attempt a connection rather than relying on static timeouts.
 5. **Separation of Concerns**: The manual `docker-compose.test.yml` will remain in the repository *strictly* for developers who wish to connect a GUI client (like DBeaver) for manual inspection, but it is entirely decoupled from the automated test suite.
+6. **Live Database Overrides**: While `testcontainers` is the default for automated testing, developers and CI runners can bypass container provisioning and connect directly to existing database instances by setting `TEST_POSTGRES_URL`, `TEST_MARIADB_URL`, or `TEST_MSSQL_URL`/`TEST_MSSQL_PORT`. When these variables are detected, the test runner skips container startup and runs the matrix against the live targets.
 
 ## Consequences
 
 *   **Positive**: Zero-configuration testing. A developer or CI runner simply types `cargo make test` and the entire matrix of databases is bootstrapped, seeded, and destroyed automatically.
 *   **Positive**: Eliminates state leakage between test runs.
-*   **Negative/Constraint**: The host machine (or CI runner) MUST have a Docker daemon installed and running for the Rust test suite to execute successfully. If Docker is missing, `cargo test` will panic.
+*   **Negative/Constraint**: Unless `TEST_*_URL` overrides are provided, the host machine (or CI runner) MUST have a Docker daemon installed and running for the Rust test suite to execute successfully. If Docker is missing and no override URLs are set, `cargo test` will fail.

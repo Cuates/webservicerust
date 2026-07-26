@@ -164,7 +164,6 @@ mod tests {
             allowed_origins: "".to_string(),
             rate_limit_rps: 10,
             rate_limit_burst: 30,
-            batch_concurrency_limit: 5,
             trust_proxy: false,
             trusted_proxy_cidr: None,
         };
@@ -183,7 +182,6 @@ mod tests {
             allowed_origins: "\u{0000}".to_string(),
             rate_limit_rps: 10,
             rate_limit_burst: 30,
-            batch_concurrency_limit: 5,
             trust_proxy: false,
             trusted_proxy_cidr: None,
         };
@@ -202,7 +200,6 @@ mod tests {
             allowed_origins: "http://localhost,\u{0000}".to_string(),
             rate_limit_rps: 10,
             rate_limit_burst: 30,
-            batch_concurrency_limit: 5,
             trust_proxy: false,
             trusted_proxy_cidr: None,
         };

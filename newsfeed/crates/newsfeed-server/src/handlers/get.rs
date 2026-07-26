@@ -11,7 +11,7 @@ use axum::{
 use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, ExtractParams};
-use newsfeed_service::{extract_feed, payload_validator::validate_get_params, validate_headers};
+use newsfeed_service::{extract_feed, validate_headers};
 use std::collections::HashMap;
 
 use std::sync::Arc;
@@ -46,8 +46,7 @@ pub async fn handler(
     }
 
     // ── 2. Validate / normalise query params ──────────────────────────────────
-    let p = validate_get_params(&raw_params);
-    let params = ExtractParams::from_map(&p);
+    let params = ExtractParams::from_map(&raw_params);
 
     // ── 3. Execute extract ────────────────────────────────────────────────────
     match extract_feed(&state, &params).await {

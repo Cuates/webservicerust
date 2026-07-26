@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic,
+    clippy::cloned_ref_to_slice_refs
+)]
+
 use sqlx::Executor;
 use std::fs;
 use std::time::Duration;
@@ -50,19 +57,23 @@ async fn execute_mssql_script(
 async fn test_postgres_integration() {
     init_tracing_for_tests();
     let docker = clients::Cli::default();
-    let image = RunnableImage::from(
-        GenericImage::new("postgres", "15")
-            .with_env_var("POSTGRES_USER", "postgres")
-            .with_env_var("POSTGRES_PASSWORD", "postgres")
-            .with_env_var("POSTGRES_DB", "db")
-            .with_wait_for(WaitFor::message_on_stderr(
-                "database system is ready to accept connections",
-            )),
-    );
-    let node = docker.run(image);
-    let port = node.get_host_port_ipv4(5432);
-
-    let db_url = format!("postgres://postgres:postgres@localhost:{}/db", port);
+    let (db_url, _node) = if let Ok(url) = std::env::var("TEST_POSTGRES_URL") {
+        (url, None)
+    } else {
+        let image = RunnableImage::from(
+            GenericImage::new("postgres", "15")
+                .with_env_var("POSTGRES_USER", "postgres")
+                .with_env_var("POSTGRES_PASSWORD", "postgres")
+                .with_env_var("POSTGRES_DB", "db")
+                .with_wait_for(WaitFor::message_on_stderr(
+                    "database system is ready to accept connections",
+                )),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(5432);
+        let url = format!("postgres://postgres:postgres@localhost:{}/db", port);
+        (url, Some(node))
+    };
     let app_cfg = newsfeed_config::AppConfig {
         bind_host: "127.0.0.1".into(),
         app_port: 8080,
@@ -70,8 +81,7 @@ async fn test_postgres_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "test_key".into(),
-        batch_concurrency_limit: 10,
+        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
     };
@@ -113,6 +123,10 @@ async fn test_postgres_integration() {
 
     let schema =
         fs::read_to_string("migrations/postgres/20260718000000_init_postgres.sql").unwrap();
+    let schema = schema.replace(
+        "SELECT pg_catalog.set_config('search_path', '', false);",
+        "SELECT pg_catalog.set_config('search_path', 'public', false);",
+    );
     pool.execute(schema.as_str())
         .await
         .expect("Failed to execute postgres schema");
@@ -154,6 +168,19 @@ async fn test_postgres_integration() {
     let rows = postgres::extract_feed(&pool, &ext_params).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].titlereturn, Some("Postgres Title".to_string()));
+
+    let ext_params_sorted = ExtractParams {
+        title: None,
+        image_url: None,
+        feed_url: None,
+        actual_url: None,
+        limit: Some(10),
+        sort: Some(newsfeed_models::feed::SortOrder::Asc),
+    };
+    let rows_sorted = postgres::extract_feed(&pool, &ext_params_sorted)
+        .await
+        .unwrap();
+    assert_eq!(rows_sorted.len(), 1);
 }
 
 #[tokio::test]
@@ -161,16 +188,20 @@ async fn test_postgres_integration() {
 async fn test_mariadb_integration() {
     init_tracing_for_tests();
     let docker = clients::Cli::default();
-    let image = RunnableImage::from(
-        GenericImage::new("mariadb", "10.6")
-            .with_env_var("MYSQL_ROOT_PASSWORD", "root")
-            .with_env_var("MYSQL_DATABASE", "db")
-            .with_wait_for(WaitFor::message_on_stderr("ready for connections")),
-    );
-    let node = docker.run(image);
-    let port = node.get_host_port_ipv4(3306);
-
-    let db_url = format!("mysql://root:root@localhost:{}/db", port);
+    let (db_url, _node) = if let Ok(url) = std::env::var("TEST_MARIADB_URL") {
+        (url, None)
+    } else {
+        let image = RunnableImage::from(
+            GenericImage::new("mariadb", "10.6")
+                .with_env_var("MYSQL_ROOT_PASSWORD", "root")
+                .with_env_var("MYSQL_DATABASE", "db")
+                .with_wait_for(WaitFor::message_on_stderr("ready for connections")),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(3306);
+        let url = format!("mysql://root:root@localhost:{}/db", port);
+        (url, Some(node))
+    };
 
     // Removed hardcoded sleep, using retry loop during AppState::init
 
@@ -181,8 +212,7 @@ async fn test_mariadb_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "test_key".into(),
-        batch_concurrency_limit: 10,
+        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
     };
@@ -284,29 +314,71 @@ async fn test_mariadb_integration() {
     let rows = mariadb::extract_feed(&pool, &ext_params).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].titlereturn, Some("Maria Title".to_string()));
+
+    let ext_params_sorted = ExtractParams {
+        title: None,
+        image_url: None,
+        feed_url: None,
+        actual_url: None,
+        limit: Some(10),
+        sort: Some(newsfeed_models::feed::SortOrder::Desc),
+    };
+    let rows_sorted = mariadb::extract_feed(&pool, &ext_params_sorted)
+        .await
+        .unwrap();
+    assert_eq!(rows_sorted.len(), 1);
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_mssql_integration() {
+    init_tracing_for_tests();
     let docker = clients::Cli::default();
-    let image = RunnableImage::from(
-        GenericImage::new("mcr.microsoft.com/mssql/server", "2022-latest")
-            .with_env_var("ACCEPT_EULA", "Y")
-            .with_env_var("MSSQL_SA_PASSWORD", "Password123!")
-            .with_wait_for(WaitFor::message_on_stdout(
-                "Service Broker manager has started",
-            )),
-    );
-    let node = docker.run(image);
-    let port = node.get_host_port_ipv4(1433);
+    let (host, port, user, pass, db, _node) = if let Ok(port_str) = std::env::var("TEST_MSSQL_PORT")
+    {
+        let port = port_str.parse::<u16>().unwrap_or(1433);
+        let host = std::env::var("TEST_MSSQL_HOST").unwrap_or_else(|_| "localhost".to_string());
+        let user = std::env::var("TEST_MSSQL_USER").unwrap_or_else(|_| "SA".to_string());
+        let pass =
+            std::env::var("TEST_MSSQL_PASSWORD").unwrap_or_else(|_| "Password123!".to_string());
+        let db = std::env::var("TEST_MSSQL_DB").unwrap_or_else(|_| "media".to_string());
+        (host, port, user, pass, db, None)
+    } else if let Ok(_url_str) = std::env::var("TEST_MSSQL_URL") {
+        (
+            "localhost".to_string(),
+            1433,
+            "SA".to_string(),
+            "Password123!".to_string(),
+            "media".to_string(),
+            None,
+        )
+    } else {
+        let image = RunnableImage::from(
+            GenericImage::new("mcr.microsoft.com/mssql/server", "2022-latest")
+                .with_env_var("ACCEPT_EULA", "Y")
+                .with_env_var("MSSQL_SA_PASSWORD", "Password123!")
+                .with_wait_for(WaitFor::message_on_stdout(
+                    "Service Broker manager has started",
+                )),
+        );
+        let node = docker.run(image);
+        let port = node.get_host_port_ipv4(1433);
+        (
+            "localhost".to_string(),
+            port,
+            "SA".to_string(),
+            "Password123!".to_string(),
+            "media".to_string(),
+            Some(node),
+        )
+    };
 
     // Removed hardcoded sleep, using retry loop during TCP connect
 
     let mut config = Config::new();
-    config.host("localhost");
+    config.host(&host);
     config.port(port);
-    config.authentication(AuthMethod::sql_server("SA", "Password123!"));
+    config.authentication(AuthMethod::sql_server(&user, &pass));
     config.trust_cert();
 
     let mut retries = 20;
@@ -350,8 +422,7 @@ async fn test_mssql_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "test_key".into(),
-        batch_concurrency_limit: 10,
+        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
     };
@@ -359,11 +430,11 @@ async fn test_mssql_integration() {
         database_target: newsfeed_config::DatabaseTarget::MsSql,
         postgres_url: None,
         mariadb_url: None,
-        mssql_host: Some("localhost".to_string()),
+        mssql_host: Some(host),
         mssql_port: Some(port),
-        mssql_database: Some("media".to_string()),
-        mssql_username: Some("SA".to_string()),
-        mssql_password: Some("Password123!".to_string()),
+        mssql_database: Some(db),
+        mssql_username: Some(user),
+        mssql_password: Some(pass),
         db_pool_min: 1,
         db_pool_max: 2,
         db_mssql_encrypt: false,
@@ -402,4 +473,17 @@ async fn test_mssql_integration() {
     let rows = mssql::extract_feed(&pool, &ext_params).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].titlereturn, Some("MSSQL Title".to_string()));
+
+    let ext_params_sorted = ExtractParams {
+        title: None,
+        image_url: None,
+        feed_url: None,
+        actual_url: None,
+        limit: Some(10),
+        sort: Some(newsfeed_models::feed::SortOrder::Asc),
+    };
+    let rows_sorted = mssql::extract_feed(&pool, &ext_params_sorted)
+        .await
+        .unwrap();
+    assert_eq!(rows_sorted.len(), 1);
 }
