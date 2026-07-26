@@ -1,4 +1,4 @@
-﻿USE [master]
+USE [master]
 GO
 /****** Object:  Database [media]    Script Date: 2026-07-18 07:29:06 ******/
 CREATE DATABASE [media]
@@ -5694,7 +5694,7 @@ begin
             begin
               -- Record does not exist
               -- Set message
-              set @result = '{"Status": "Success", "Message": "Record does not exist"}'
+              set @result = '{"Status": "Error", "Message": "Record does not exist"}'
             end
         end
       else

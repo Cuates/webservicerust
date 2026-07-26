@@ -1349,7 +1349,7 @@ begin
             begin
               -- Record does not exist
               -- Set message
-              set @result = '{"Status": "Success", "Message": "Record does not exist"}'
+              set @result = '{"Status": "Error", "Message": "Record does not exist"}'
             end
         end
       else
