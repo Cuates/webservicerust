@@ -3,10 +3,6 @@ GO
 /****** Object:  Database [media]    Script Date: 2026-07-18 07:29:06 ******/
 CREATE DATABASE [media]
  CONTAINMENT = NONE
- ON  PRIMARY 
-( NAME = N'media', FILENAME = N'/var/opt/mssql/data/media.mdf' , SIZE = 335872KB , MAXSIZE = UNLIMITED, FILEGROWTH = 65536KB )
- LOG ON 
-( NAME = N'media_log', FILENAME = N'/var/opt/mssql/data/media_log.ldf' , SIZE = 30875648KB , MAXSIZE = 2048GB , FILEGROWTH = 65536KB )
 GO
 USE [media]
 GO
