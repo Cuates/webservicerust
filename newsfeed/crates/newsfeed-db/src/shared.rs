@@ -1,8 +1,27 @@
 //! Shared database utilities and helper functions used across backends.
 
 use crate::error::DbError;
+use newsfeed_models::NewsFeedRow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// Shared helper to construct a `NewsFeedRow` from mapped Option<String> columns
+#[must_use]
+pub fn row_to_news_feed_row(
+    titlereturn: Option<String>,
+    imageurlreturn: Option<String>,
+    feedurlreturn: Option<String>,
+    actualurlreturn: Option<String>,
+    publishdatereturn: Option<String>,
+) -> NewsFeedRow {
+    NewsFeedRow {
+        titlereturn,
+        imageurlreturn,
+        feedurlreturn,
+        actualurlreturn,
+        publishdatereturn,
+    }
+}
 
 /// Status of a CUD operation returned by the database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,16 +64,7 @@ pub(crate) fn parse_status_rows(rows: Vec<(Option<String>,)>) -> Result<Vec<CudR
         };
 
         for val in vals {
-            let mut res: CudResult = serde_json::from_value(val)?;
-            if res.status == CudStatus::Success {
-                let msg_lower = res.message.to_lowercase();
-                if msg_lower.contains("exist")
-                    || msg_lower.contains("already exists")
-                    || msg_lower.contains("does not exist")
-                {
-                    res.status = CudStatus::Skipped;
-                }
-            }
+            let res: CudResult = serde_json::from_value(val)?;
             results.push(res);
         }
     }
@@ -89,19 +99,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_status_rows_normalization() {
-        let rows = vec![(Some(
-            r#"[{"Status":"Success","Message":"Record exist"},{"Status":"Success","Message":"Record already exists"},{"Status":"Skipped","Message":"Record already exists"}]"#
-                .to_string(),
-        ),)];
-        let res = parse_status_rows(rows).unwrap();
-        assert_eq!(res.len(), 3);
-        assert_eq!(res[0].status, CudStatus::Skipped);
-        assert_eq!(res[1].status, CudStatus::Skipped);
-        assert_eq!(res[2].status, CudStatus::Skipped);
-    }
-
-    #[test]
     fn test_parse_status_rows_empty_result() {
         let rows = vec![(None,)];
         assert!(parse_status_rows(rows).is_err());
@@ -118,5 +115,22 @@ mod tests {
         let rows = vec![];
         let res = parse_status_rows(rows).expect("empty vec should return Ok(empty)");
         assert!(res.is_empty());
+    }
+
+    #[test]
+    fn test_row_to_news_feed_row() {
+        use super::row_to_news_feed_row;
+        let row = row_to_news_feed_row(
+            Some("Title".to_string()),
+            Some("Img".to_string()),
+            Some("Feed".to_string()),
+            Some("Url".to_string()),
+            Some("2023-01-01".to_string()),
+        );
+        assert_eq!(row.titlereturn.as_deref(), Some("Title"));
+        assert_eq!(row.imageurlreturn.as_deref(), Some("Img"));
+        assert_eq!(row.feedurlreturn.as_deref(), Some("Feed"));
+        assert_eq!(row.actualurlreturn.as_deref(), Some("Url"));
+        assert_eq!(row.publishdatereturn.as_deref(), Some("2023-01-01"));
     }
 }

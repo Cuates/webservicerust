@@ -52,6 +52,23 @@ pub async fn cud_feed(
     }
 }
 
+// ── ETag ──────────────────────────────────────────────────────────────────────
+
+/// Retrieve a max timestamp for `ETag` generation.
+pub async fn max_modified_date(state: &Arc<AppState>) -> Result<Option<String>, ServiceError> {
+    match &state.db {
+        DbPool::Postgres(pool) => newsfeed_db::postgres::max_modified_date(pool)
+            .await
+            .map_err(ServiceError::Database),
+        DbPool::MariaDb(pool) => newsfeed_db::mariadb::max_modified_date(pool)
+            .await
+            .map_err(ServiceError::Database),
+        DbPool::MsSql(pool) => newsfeed_db::mssql::max_modified_date(pool)
+            .await
+            .map_err(ServiceError::Database),
+    }
+}
+
 // ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -195,5 +212,26 @@ mod tests {
         let res = ok_result.unwrap_or_default();
         assert_eq!(res.len(), 1);
         assert!(matches!(res[0].status, newsfeed_db::CudStatus::Error));
+    }
+
+    #[tokio::test]
+    async fn test_max_modified_date_postgres() {
+        let state = make_postgres_state();
+        let result = max_modified_date(&state).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_max_modified_date_mariadb() {
+        let state = make_mariadb_state();
+        let result = max_modified_date(&state).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_max_modified_date_mssql() {
+        let state = make_mssql_state().await;
+        let result = max_modified_date(&state).await;
+        assert!(result.is_err());
     }
 }

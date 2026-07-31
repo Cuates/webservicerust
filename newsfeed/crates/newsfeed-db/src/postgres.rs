@@ -60,6 +60,18 @@ pub async fn cud_feed(
     parse_status_rows(rows)
 }
 
+/// Query the max `modified_date` across all items
+#[instrument(skip(pool), level = "debug")]
+pub async fn max_modified_date(
+    pool: &sqlx::PgPool,
+) -> Result<Option<String>, crate::error::DbError> {
+    let row: (Option<String>,) =
+        sqlx::query_as("SELECT CAST(MAX(modified_date) AS VARCHAR) FROM newsfeed")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

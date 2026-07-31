@@ -26,7 +26,7 @@ impl SortOrder {
 
 /// Parameters passed to the extract stored procedure / function.
 /// All filter fields are optional; the procedure handles NULL internally.
-#[derive(Debug, Clone, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Default, ToSchema, IntoParams, Serialize, Deserialize)]
 pub struct ExtractParams {
     pub title: Option<String>,
     pub image_url: Option<String>,
@@ -65,47 +65,89 @@ impl ExtractParams {
 
 // ── Create / Update / Delete operation parameters ─────────────────────────────
 
-/// Helper function to trim strings and reject empty or whitespace-only strings during deserialization.
-pub fn deserialize_non_empty_option<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+fn validate_string(s: &str, max_len: usize) -> Result<String, &'static str> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("field cannot be empty or whitespace-only");
+    }
+    if trimmed.len() > max_len {
+        return Err("field exceeds maximum length");
+    }
+    Ok(trimmed.to_string())
+}
+
+pub fn deserialize_title<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) => validate_string(&s, 255)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
+
+pub fn deserialize_url<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let opt = Option::<String>::deserialize(deserializer)?;
     match opt {
         Some(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Err(serde::de::Error::custom(
-                    "field cannot be empty or whitespace-only",
-                ))
-            } else {
-                Ok(Some(trimmed.to_string()))
+            let s = validate_string(&s, 2048).map_err(serde::de::Error::custom)?;
+            if !s.starts_with("http://") && !s.starts_with("https://") {
+                return Err(serde::de::Error::custom(
+                    "URL must start with http:// or https://",
+                ));
             }
+            Ok(Some(s))
         }
         None => Ok(None),
     }
 }
 
-/// Parameters passed to the insert/update/delete stored procedure.
+pub fn deserialize_date<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) => {
+            let s = validate_string(&s, 50).map_err(serde::de::Error::custom)?;
+            // Simple format check (e.g. basic ISO format sanity, no deep chrono parsing needed to prevent basic abuse)
+            if !s.chars().any(|c| c.is_ascii_digit()) {
+                return Err(serde::de::Error::custom("invalid date format"));
+            }
+            Ok(Some(s))
+        }
+        None => Ok(None),
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CudParams {
-    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
+    #[serde(default, deserialize_with = "deserialize_title")]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
+    #[serde(default, deserialize_with = "deserialize_url")]
     pub image_url: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
+    #[serde(default, deserialize_with = "deserialize_url")]
     pub feed_url: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
+    #[serde(default, deserialize_with = "deserialize_url")]
     pub actual_url: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
+    #[serde(default, deserialize_with = "deserialize_date")]
     pub publish_date: Option<String>,
 }
 
 /// Wrapper for CUD request payloads that can be deserialized from either a single JSON object
 /// or a JSON array of objects, normalizing both into a `Vec<CudParams>`.
 #[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq, Default)]
-pub struct CudPayload(pub Vec<CudParams>);
+pub struct CudPayload {
+    pub idempotency_key: Option<String>,
+    pub items: Vec<CudParams>,
+}
 
 impl<'de> serde::Deserialize<'de> for CudPayload {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -115,13 +157,50 @@ impl<'de> serde::Deserialize<'de> for CudPayload {
         #[derive(serde::Deserialize)]
         #[serde(untagged)]
         enum Helper {
-            Single(CudParams),
+            Wrapper {
+                idempotency_key: Option<String>,
+                items: Vec<CudParams>,
+            },
             Batch(Vec<CudParams>),
+            Single(CudParams),
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Single(item) => Ok(CudPayload(vec![item])),
-            Helper::Batch(items) => Ok(CudPayload(items)),
+            Helper::Wrapper {
+                idempotency_key,
+                items,
+            } => {
+                if items.is_empty() {
+                    return Err(serde::de::Error::custom("payload array cannot be empty"));
+                }
+                if items.len() > 1000 {
+                    return Err(serde::de::Error::custom(
+                        "payload array exceeds maximum size of 1000 items",
+                    ));
+                }
+                Ok(CudPayload {
+                    idempotency_key,
+                    items,
+                })
+            }
+            Helper::Single(item) => Ok(CudPayload {
+                idempotency_key: None,
+                items: vec![item],
+            }),
+            Helper::Batch(items) => {
+                if items.is_empty() {
+                    return Err(serde::de::Error::custom("payload array cannot be empty"));
+                }
+                if items.len() > 1000 {
+                    return Err(serde::de::Error::custom(
+                        "payload array exceeds maximum size of 1000 items",
+                    ));
+                }
+                Ok(CudPayload {
+                    idempotency_key: None,
+                    items,
+                })
+            }
         }
     }
 }
@@ -129,13 +208,13 @@ impl<'de> serde::Deserialize<'de> for CudPayload {
 impl std::ops::Deref for CudPayload {
     type Target = Vec<CudParams>;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.items
     }
 }
 
 impl std::ops::DerefMut for CudPayload {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.items
     }
 }
 
@@ -143,7 +222,7 @@ impl IntoIterator for CudPayload {
     type Item = CudParams;
     type IntoIter = std::vec::IntoIter<CudParams>;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.items.into_iter()
     }
 }
 
@@ -151,7 +230,7 @@ impl<'a> IntoIterator for &'a CudPayload {
     type Item = &'a CudParams;
     type IntoIter = std::slice::Iter<'a, CudParams>;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.items.iter()
     }
 }
 
@@ -329,5 +408,55 @@ mod tests {
         let items: Vec<CudParams> = <CudPayload as IntoIterator>::into_iter(payload).collect();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title.as_deref(), Some("Mutated"));
+    }
+
+    #[test]
+    fn test_cud_payload_idempotency_key() {
+        let json_str =
+            r#"{"items": [{"title": "Idempotent Title"}], "idempotency_key": "key-12345"}"#;
+        let payload: CudPayload = serde_json::from_str(json_str).unwrap();
+        assert_eq!(payload.len(), 1);
+        assert_eq!(payload.idempotency_key.as_deref(), Some("key-12345"));
+        assert_eq!(payload[0].title.as_deref(), Some("Idempotent Title"));
+    }
+
+    #[test]
+    fn test_feed_validation_edges() {
+        // String too long for title
+        let long_title = "a".repeat(256);
+        let json_str = format!(r#"{{"title": "{}"}}"#, long_title);
+        let err = serde_json::from_str::<CudParams>(&json_str).expect_err("should fail");
+        assert!(err.to_string().contains("field exceeds maximum length"));
+
+        // Invalid date format
+        let json_str = r#"{"publish_date": "abcd"}"#;
+        let err = serde_json::from_str::<CudParams>(json_str).expect_err("should fail");
+        assert!(err.to_string().contains("invalid date format"));
+
+        // Null publish date
+        let json_str = r#"{"publish_date": null}"#;
+        let params: CudParams = serde_json::from_str(json_str).unwrap();
+        assert!(params.publish_date.is_none());
+
+        // Wrapper empty
+        let json_str = r#"{"items": []}"#;
+        let err = serde_json::from_str::<CudPayload>(json_str).expect_err("should fail");
+        assert!(err.to_string().contains("payload array cannot be empty"));
+
+        // Wrapper > 1000
+        let items = vec![r#"{"title": "t"}"#; 1001].join(",");
+        let json_str = format!(r#"{{"items": [{}]}}"#, items);
+        let err = serde_json::from_str::<CudPayload>(&json_str).expect_err("should fail");
+        assert!(err.to_string().contains("exceeds maximum size"));
+
+        // Batch empty
+        let json_str = r#"[]"#;
+        let err = serde_json::from_str::<CudPayload>(json_str).expect_err("should fail");
+        assert!(err.to_string().contains("payload array cannot be empty"));
+
+        // Batch > 1000
+        let json_str = format!(r#"[{}]"#, items);
+        let err = serde_json::from_str::<CudPayload>(&json_str).expect_err("should fail");
+        assert!(err.to_string().contains("exceeds maximum size"));
     }
 }

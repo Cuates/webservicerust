@@ -62,7 +62,27 @@ pub fn validate_required_fields(
     action: &Action,
 ) -> Result<(), ApiResponse<serde_json::Value>> {
     match action {
-        Action::InsertFeed | Action::DeleteFeed => {
+        Action::InsertFeed => {
+            if params.title.is_none() {
+                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                    ResponseCode::VALIDATION_ERROR,
+                    "Missing mandatory parameter: title",
+                ));
+            }
+            if params.feed_url.is_none() {
+                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                    ResponseCode::VALIDATION_ERROR,
+                    "Missing mandatory parameter: feed_url",
+                ));
+            }
+            if params.publish_date.is_none() {
+                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                    ResponseCode::VALIDATION_ERROR,
+                    "Missing mandatory parameter: publish_date",
+                ));
+            }
+        }
+        Action::DeleteFeed => {
             if params.title.is_none() {
                 return Err(ApiResponse::<serde_json::Value>::error_with_code(
                     ResponseCode::VALIDATION_ERROR,
@@ -210,9 +230,19 @@ mod tests {
     #[test]
     fn test_validate_required_fields_insert() {
         let mut params = CudParams::default();
+        // Empty params -> Error
         assert!(validate_required_fields(&params, &Action::InsertFeed).is_err());
 
+        // Missing feed_url and publish_date -> Error
         params.title = Some("Test Title".to_string());
+        assert!(validate_required_fields(&params, &Action::InsertFeed).is_err());
+
+        // Missing publish_date -> Error
+        params.feed_url = Some("http://feed.com".to_string());
+        assert!(validate_required_fields(&params, &Action::InsertFeed).is_err());
+
+        // All required fields present -> Ok
+        params.publish_date = Some("2026-07-26".to_string());
         assert!(validate_required_fields(&params, &Action::InsertFeed).is_ok());
     }
 

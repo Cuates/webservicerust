@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-07-31
+
+### Added
+- **Tooling**: Enforced a strict pre-commit hygiene pipeline covering `cargo make check`, `check-deadcode`, `machete`, `fix`, `info`, `audit`, and `test-coverage`.
+
+### Changed
+- **Release**: Bumped workspace package version to `4.2.0`.
+
 ## [4.1.0] - 2026-07-30
 
 ### Added

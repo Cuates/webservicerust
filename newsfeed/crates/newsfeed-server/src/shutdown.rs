@@ -73,4 +73,11 @@ mod tests {
         let res = tokio::time::timeout(std::time::Duration::from_secs(1), task).await;
         assert!(res.is_ok(), "Expected task to finish after abort");
     }
+
+    #[tokio::test]
+    async fn test_shutdown_signal_wrapper() {
+        let task = tokio::spawn(shutdown_signal());
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        task.abort();
+    }
 }

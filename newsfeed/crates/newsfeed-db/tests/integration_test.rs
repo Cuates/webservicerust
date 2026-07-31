@@ -53,7 +53,6 @@ async fn execute_mssql_script(
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_postgres_integration() {
     init_tracing_for_tests();
     let docker = clients::Cli::default();
@@ -84,6 +83,8 @@ async fn test_postgres_integration() {
         api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::Postgres,
@@ -235,7 +236,6 @@ async fn test_postgres_integration() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_mariadb_integration() {
     init_tracing_for_tests();
     let docker = clients::Cli::default();
@@ -266,6 +266,8 @@ async fn test_mariadb_integration() {
         api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::MariaDb,
@@ -381,7 +383,6 @@ async fn test_mariadb_integration() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_mssql_integration() {
     init_tracing_for_tests();
     let docker = clients::Cli::default();
@@ -476,6 +477,8 @@ async fn test_mssql_integration() {
         api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::MsSql,
@@ -499,6 +502,10 @@ async fn test_mssql_integration() {
         newsfeed_db::pool::DbPool::MsSql(p) => p,
         _ => panic!("Expected mssql pool"),
     };
+
+    // Test max_modified_date on empty DB
+    let empty_max_date = mssql::max_modified_date(&pool).await.unwrap();
+    assert!(empty_max_date.is_none());
 
     // Test CUD (Create)
     let cud_params = CudParams {
@@ -537,4 +544,8 @@ async fn test_mssql_integration() {
         .await
         .unwrap();
     assert_eq!(rows_sorted.len(), 1);
+
+    // Test max_modified_date on populated DB
+    let max_date = mssql::max_modified_date(&pool).await.unwrap();
+    assert!(max_date.is_some());
 }

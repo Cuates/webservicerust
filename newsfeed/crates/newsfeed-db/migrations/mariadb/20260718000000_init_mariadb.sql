@@ -10,75 +10,7 @@ CREATE TABLE IF NOT EXISTS newsfeed (
 
 DELIMITER ;;
 
-CREATE PROCEDURE `insertupdatedeletenewsfeed`(
-    IN optionMode TEXT,
-    IN p_title TEXT,
-    IN p_imageurl TEXT,
-    IN p_feedurl TEXT,
-    IN p_actualurl TEXT,
-    IN p_publishdate TEXT
-)
-BEGIN
-    DECLARE result TEXT DEFAULT '';
-    
-    BEGIN
-        DECLARE EXIT HANDLER FOR 1062 
-        BEGIN
-            SET result = '{"Status": "Skipped", "Message": "Record already exists"}';
-            SELECT result AS `status`;
-        END;
-        DECLARE EXIT HANDLER FOR SQLEXCEPTION 
-        BEGIN
-            GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE, @errno = MYSQL_ERRNO, @text = MESSAGE_TEXT;
-            SET result = CONCAT('{"Status": "Error", "Message": "', REPLACE(@text, '"', '\\"'), '"}');
-            SELECT result AS `status`;
-        END;
 
-        IF optionMode = 'insertFeed' OR optionMode = 'insertNewsFeed' THEN
-            IF p_title IS NULL OR TRIM(p_title) = '' OR p_feedurl IS NULL OR TRIM(p_feedurl) = '' OR p_publishdate IS NULL OR TRIM(p_publishdate) = '' THEN
-                SET result = '{"Status": "Error", "Message": "Process halted, title, feed url, and or publish date were not provided"}';
-            ELSEIF NOT EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                INSERT INTO newsfeed (title, imageurl, feedurl, actualurl, publishdate, created_date, modified_date)
-                VALUES (p_title, NULLIF(TRIM(p_imageurl), ''), p_feedurl, NULLIF(TRIM(p_actualurl), ''), p_publishdate, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-                SET result = '{"Status": "Success", "Message": "Record(s) inserted"}';
-            ELSE
-                SET result = '{"Status": "Skipped", "Message": "Record already exists"}';
-            END IF;
-        ELSEIF optionMode = 'updateFeed' OR optionMode = 'updateNewsFeed' THEN
-            IF p_title IS NULL OR TRIM(p_title) = '' OR p_feedurl IS NULL OR TRIM(p_feedurl) = '' OR p_publishdate IS NULL OR TRIM(p_publishdate) = '' THEN
-                SET result = '{"Status": "Error", "Message": "Process halted, title, feed url, and or publish date were not provided"}';
-            ELSEIF EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                IF NOT EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title AND (imageurl = p_imageurl OR (imageurl IS NULL AND p_imageurl IS NULL)) AND feedurl = p_feedurl AND (actualurl = p_actualurl OR (actualurl IS NULL AND p_actualurl IS NULL)) AND publishdate = p_publishdate) THEN
-                    UPDATE newsfeed
-                    SET imageurl = NULLIF(TRIM(p_imageurl), ''),
-                        feedurl = p_feedurl,
-                        actualurl = NULLIF(TRIM(p_actualurl), ''),
-                        publishdate = p_publishdate,
-                        modified_date = CURRENT_TIMESTAMP
-                    WHERE title = p_title;
-                    SET result = '{"Status": "Success", "Message": "Record(s) updated"}';
-                ELSE
-                    SET result = '{"Status": "Skipped", "Message": "Record already exists"}';
-                END IF;
-            ELSE
-                SET result = '{"Status": "Error", "Message": "Record does not exist"}';
-            END IF;
-        ELSEIF optionMode = 'deleteFeed' OR optionMode = 'deleteNewsFeed' THEN
-            IF p_title IS NULL OR TRIM(p_title) = '' THEN
-                SET result = '{"Status": "Error", "Message": "Process halted, title was not provided"}';
-            ELSEIF EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                DELETE FROM newsfeed WHERE title = p_title;
-                SET result = '{"Status": "Success", "Message": "Record(s) deleted"}';
-            ELSE
-                SET result = '{"Status": "Skipped", "Message": "Record does not exist"}';
-            END IF;
-        ELSE
-            SET result = '{"Status": "Error", "Message": "Invalid optionMode"}';
-        END IF;
-    END;
-
-    SELECT result AS `status`;
-END;;
 
 CREATE PROCEDURE `extractnewsfeed`(
     IN optionMode TEXT,
@@ -429,93 +361,95 @@ CREATE PROCEDURE `cud_bulk_json_newsfeed`(
     IN payload JSON
 )
 BEGIN
-    DECLARE done INT DEFAULT FALSE;
-    DECLARE p_title TEXT;
-    DECLARE p_image_url TEXT;
-    DECLARE p_feed_url TEXT;
-    DECLARE p_actual_url TEXT;
-    DECLARE p_publish_date TEXT;
-    
-    DECLARE cur CURSOR FOR 
-        SELECT title, image_url, feed_url, actual_url, publish_date 
-        FROM JSON_TABLE(
-            payload,
-            '$[*]' COLUMNS(
-                title TEXT PATH '$.title',
-                image_url TEXT PATH '$.image_url',
-                feed_url TEXT PATH '$.feed_url',
-                actual_url TEXT PATH '$.actual_url',
-                publish_date TEXT PATH '$.publish_date'
-            )
-        ) AS jt;
-        
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
-    
     CREATE TEMPORARY TABLE IF NOT EXISTS temp_bulk_results (status TEXT);
     TRUNCATE TABLE temp_bulk_results;
 
-    OPEN cur;
-    read_loop: LOOP
-        FETCH cur INTO p_title, p_image_url, p_feed_url, p_actual_url, p_publish_date;
-        IF done THEN
-            LEAVE read_loop;
-        END IF;
-        
-        BEGIN
-            DECLARE EXIT HANDLER FOR 1062 
-            BEGIN
-                INSERT INTO temp_bulk_results VALUES ('{"Status": "Skipped", "Message": "Record already exists"}');
-            END;
-            DECLARE EXIT HANDLER FOR SQLEXCEPTION 
-            BEGIN
-                GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE, @errno = MYSQL_ERRNO, @text = MESSAGE_TEXT;
-                INSERT INTO temp_bulk_results VALUES (CONCAT('{"Status": "Error", "Message": "', REPLACE(@text, '"', '\\"'), '"}'));
-            END;
-            
-            IF optionMode = 'insertFeed' OR optionMode = 'insertNewsFeed' THEN
-                IF p_title IS NULL OR TRIM(p_title) = '' OR p_feed_url IS NULL OR TRIM(p_feed_url) = '' OR p_publish_date IS NULL OR TRIM(p_publish_date) = '' THEN
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Process halted, title, feed url, and or publish date were not provided"}');
-                ELSEIF NOT EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                    INSERT INTO newsfeed (title, imageurl, feedurl, actualurl, publishdate, created_date, modified_date)
-                    VALUES (p_title, NULLIF(TRIM(p_image_url), ''), p_feed_url, NULLIF(TRIM(p_actual_url), ''), p_publish_date, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) inserted"}');
-                ELSE
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Skipped", "Message": "Record already exists"}');
-                END IF;
-            ELSEIF optionMode = 'updateFeed' OR optionMode = 'updateNewsFeed' THEN
-                IF p_title IS NULL OR TRIM(p_title) = '' OR p_feed_url IS NULL OR TRIM(p_feed_url) = '' OR p_publish_date IS NULL OR TRIM(p_publish_date) = '' THEN
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Process halted, title, feed url, and or publish date were not provided"}');
-                ELSEIF EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                    IF NOT EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title AND (imageurl = p_image_url OR (imageurl IS NULL AND p_image_url IS NULL)) AND feedurl = p_feed_url AND (actualurl = p_actual_url OR (actualurl IS NULL AND p_actual_url IS NULL)) AND publishdate = p_publish_date) THEN
-                        UPDATE newsfeed
-                        SET imageurl = NULLIF(TRIM(p_image_url), ''),
-                            feedurl = p_feed_url,
-                            actualurl = NULLIF(TRIM(p_actual_url), ''),
-                            publishdate = p_publish_date,
-                            modified_date = CURRENT_TIMESTAMP
-                        WHERE title = p_title;
-                        INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) updated"}');
-                    ELSE
-                        INSERT INTO temp_bulk_results VALUES ('{"Status": "Skipped", "Message": "Record already exists"}');
-                    END IF;
-                ELSE
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Record does not exist"}');
-                END IF;
-            ELSEIF optionMode = 'deleteFeed' OR optionMode = 'deleteNewsFeed' THEN
-                IF p_title IS NULL OR TRIM(p_title) = '' THEN
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Process halted, title was not provided"}');
-                ELSEIF EXISTS (SELECT 1 FROM newsfeed WHERE title = p_title) THEN
-                    DELETE FROM newsfeed WHERE title = p_title;
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Success", "Message": "Record(s) deleted"}');
-                ELSE
-                    INSERT INTO temp_bulk_results VALUES ('{"Status": "Skipped", "Message": "Record does not exist"}');
-                END IF;
-            ELSE
-                INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Invalid optionMode"}');
-            END IF;
-        END;
-    END LOOP;
-    CLOSE cur;
+    CREATE TEMPORARY TABLE IF NOT EXISTS tmp_parsed_input (
+        title TEXT,
+        image_url TEXT,
+        feed_url TEXT,
+        actual_url TEXT,
+        publish_date TEXT
+    );
+    TRUNCATE TABLE tmp_parsed_input;
+
+    INSERT INTO tmp_parsed_input
+    SELECT title, image_url, feed_url, actual_url, publish_date 
+    FROM JSON_TABLE(
+        payload,
+        '$[*]' COLUMNS(
+            title TEXT PATH '$.title',
+            image_url TEXT PATH '$.image_url',
+            feed_url TEXT PATH '$.feed_url',
+            actual_url TEXT PATH '$.actual_url',
+            publish_date TEXT PATH '$.publish_date'
+        )
+    ) AS jt
+    WHERE title IS NOT NULL AND title != ''
+      AND feed_url IS NOT NULL AND feed_url != ''
+      AND publish_date IS NOT NULL AND publish_date != '';
+
+    IF optionMode = 'insertFeed' OR optionMode = 'insertNewsFeed' THEN
+        -- Generate statuses before insert
+        INSERT INTO temp_bulk_results (status)
+        SELECT JSON_OBJECT(
+            'Status', IF(n.title IS NOT NULL, 'Skipped', 'Success'),
+            'Message', IF(n.title IS NOT NULL, 'SKIPPED_EXISTS', 'Record(s) inserted')
+        )
+        FROM tmp_parsed_input t
+        LEFT JOIN newsfeed n ON t.title = n.title;
+
+        -- Insert new records
+        INSERT INTO newsfeed (title, imageurl, feedurl, actualurl, publishdate, created_date, modified_date)
+        SELECT t.title, NULLIF(TRIM(t.image_url), ''), t.feed_url, NULLIF(TRIM(t.actual_url), ''), t.publish_date, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM tmp_parsed_input t
+        WHERE NOT EXISTS (SELECT 1 FROM newsfeed n WHERE n.title = t.title);
+
+    ELSEIF optionMode = 'updateFeed' OR optionMode = 'updateNewsFeed' THEN
+        -- Generate statuses before update
+        INSERT INTO temp_bulk_results (status)
+        SELECT JSON_OBJECT(
+            'Status', CASE 
+                WHEN n.title IS NULL THEN 'Skipped'
+                WHEN n.imageurl <=> NULLIF(TRIM(t.image_url), '') AND n.feedurl <=> t.feed_url AND n.actualurl <=> NULLIF(TRIM(t.actual_url), '') AND n.publishdate <=> t.publish_date THEN 'Skipped'
+                ELSE 'Success'
+            END,
+            'Message', CASE
+                WHEN n.title IS NULL THEN 'SKIPPED_NOT_FOUND'
+                WHEN n.imageurl <=> NULLIF(TRIM(t.image_url), '') AND n.feedurl <=> t.feed_url AND n.actualurl <=> NULLIF(TRIM(t.actual_url), '') AND n.publishdate <=> t.publish_date THEN 'SKIPPED_EXISTS'
+                ELSE 'Record(s) updated'
+            END
+        )
+        FROM tmp_parsed_input t
+        LEFT JOIN newsfeed n ON t.title = n.title;
+
+        -- Update existing records
+        UPDATE newsfeed n
+        INNER JOIN tmp_parsed_input t ON n.title = t.title
+        SET n.imageurl = NULLIF(TRIM(t.image_url), ''),
+            n.feedurl = t.feed_url,
+            n.actualurl = NULLIF(TRIM(t.actual_url), ''),
+            n.publishdate = t.publish_date,
+            n.modified_date = CURRENT_TIMESTAMP
+        WHERE NOT (n.imageurl <=> NULLIF(TRIM(t.image_url), '') AND n.feedurl <=> t.feed_url AND n.actualurl <=> NULLIF(TRIM(t.actual_url), '') AND n.publishdate <=> t.publish_date);
+
+    ELSEIF optionMode = 'deleteFeed' OR optionMode = 'deleteNewsFeed' THEN
+        -- Generate statuses before delete
+        INSERT INTO temp_bulk_results (status)
+        SELECT JSON_OBJECT(
+            'Status', IF(n.title IS NOT NULL, 'Success', 'Skipped'),
+            'Message', IF(n.title IS NOT NULL, 'Record(s) deleted', 'SKIPPED_NOT_FOUND')
+        )
+        FROM tmp_parsed_input t
+        LEFT JOIN newsfeed n ON t.title = n.title;
+
+        -- Delete records
+        DELETE n FROM newsfeed n
+        INNER JOIN tmp_parsed_input t ON n.title = t.title;
+
+    ELSE
+        INSERT INTO temp_bulk_results VALUES ('{"Status": "Error", "Message": "Invalid optionMode"}');
+    END IF;
 
     SELECT CONCAT('[', IFNULL(GROUP_CONCAT(status SEPARATOR ','), ''), ']') AS `status` FROM temp_bulk_results;
 END;;

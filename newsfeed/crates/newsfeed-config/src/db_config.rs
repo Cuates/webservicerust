@@ -116,7 +116,10 @@ impl std::fmt::Debug for DatabaseConfig {
             .field("mssql_host", &self.mssql_host)
             .field("mssql_port", &self.mssql_port)
             .field("mssql_database", &self.mssql_database)
-            .field("mssql_username", &self.mssql_username)
+            .field(
+                "mssql_username",
+                &self.mssql_username.as_ref().map(|_| "***REDACTED***"),
+            )
             .field(
                 "mssql_password",
                 &self.mssql_password.as_ref().map(|_| "***REDACTED***"),
@@ -271,12 +274,14 @@ mod tests {
         let cfg = DatabaseConfig {
             postgres_url: Some("postgres://secret:pass@localhost/db".to_owned()),
             mariadb_url: Some("mysql://secret:pass@localhost/db".to_owned()),
+            mssql_username: Some("SecretUser".to_owned()),
             mssql_password: Some("SecretPass123!".to_owned()),
             ..base_config(DatabaseType::Postgres)
         };
         let debug_str = format!("{:?}", cfg);
         assert!(debug_str.contains("***REDACTED***"));
         assert!(!debug_str.contains("secret"));
+        assert!(!debug_str.contains("SecretUser"));
         assert!(!debug_str.contains("SecretPass123!"));
     }
 }

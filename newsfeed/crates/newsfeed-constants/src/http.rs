@@ -3,9 +3,10 @@
 
 // ── Routing ───────────────────────────────────────────────────────────────────
 
-pub const API_ROUTE_PREFIX: &str = "/api";
+pub const API_ROUTE_PREFIX: &str = "/api/v1";
 pub const PROJECT_NAME: &str = "newsfeed";
-pub const HEALTH_ROUTE: &str = "/health";
+pub const HEALTH_LIVE_ROUTE: &str = "/health/live";
+pub const HEALTH_READY_ROUTE: &str = "/health/ready";
 
 // ── HTTP header names and expected values ─────────────────────────────────────
 

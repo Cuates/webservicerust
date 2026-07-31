@@ -40,6 +40,8 @@ fn create_test_server() -> TestServer {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let state = create_test_state();
@@ -74,12 +76,17 @@ async fn test_health_check() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let app = router::build(state, &cfg);
     let server = TestServer::new(app);
 
-    let response = server.get("/health").await;
-    response.assert_status(StatusCode::SERVICE_UNAVAILABLE);
+    let response_ready = server.get("/health/ready").await;
+    response_ready.assert_status(StatusCode::SERVICE_UNAVAILABLE);
+
+    let response_live = server.get("/health/live").await;
+    response_live.assert_status(StatusCode::OK);
 }
 
 #[tokio::test]
@@ -98,7 +105,7 @@ async fn test_openapi_json() {
 #[tokio::test]
 async fn test_unauthenticated_request() {
     let server = create_test_server();
-    let response = server.get("/api/newsfeed").await;
+    let response = server.get("/api/v1/newsfeed").await;
 
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
 }
@@ -107,7 +114,7 @@ async fn test_unauthenticated_request() {
 async fn test_invalid_api_key() {
     let server = create_test_server();
     let response = server
-        .get("/api/newsfeed")
+        .get("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_invalid_key"),
@@ -124,7 +131,7 @@ async fn test_invalid_json_payload() {
 
     // 1. Test missing Content-Type (triggers 415 via AppJson)
     let response_415 = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -143,7 +150,7 @@ async fn test_invalid_json_payload() {
 
     // 2. Test valid JSON but missing mandatory fields (triggers custom 422)
     let response_422 = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -176,7 +183,7 @@ async fn test_cors_headers_on_get() {
     let valid_api_key = "nf_test_key_123";
 
     let response = server
-        .get("/api/newsfeed")
+        .get("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -212,7 +219,9 @@ async fn test_rate_limiting() {
         api_keys: "nf_test_key_123".to_string(),
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 1,
-        rate_limit_burst: 1, // Max 1 request
+        rate_limit_burst: 1, // Max 1 request,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let state = create_test_state();
@@ -232,7 +241,7 @@ async fn test_rate_limiting() {
     // 1st request should be fine through rate limit (but hit 415 or 422 instantly
     // because we deliberately send an invalid payload to avoid the 60s DB timeout).
     let res1 = limit_server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -248,7 +257,7 @@ async fn test_rate_limiting() {
 
     // 2nd request in quick succession should hit 429 Too Many Requests
     let res2 = limit_server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -279,6 +288,8 @@ async fn test_rate_limiting_precedence() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 1,
         rate_limit_burst: 1,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let state = create_test_state();
@@ -297,7 +308,7 @@ async fn test_rate_limiting_precedence() {
 
     // 1st request hits 401 Unauthorized because it gets through rate limiter
     let res1 = limit_server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(invalid_api_key),
@@ -313,7 +324,7 @@ async fn test_rate_limiting_precedence() {
 
     // 2nd request hits 429 Too Many Requests because rate limit fires BEFORE auth
     let res2 = limit_server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(invalid_api_key),
@@ -403,6 +414,8 @@ async fn create_live_postgres_state(
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let db_cfg = newsfeed_config::DatabaseConfig {
@@ -543,6 +556,8 @@ async fn create_live_mariadb_state(
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let db_cfg = newsfeed_config::DatabaseConfig {
@@ -705,6 +720,8 @@ async fn create_live_mssql_state(
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let db_cfg = newsfeed_config::DatabaseConfig {
@@ -772,6 +789,8 @@ async fn test_health_check_live_db() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
@@ -786,7 +805,7 @@ async fn test_health_check_live_db() {
     ));
     let server = TestServer::new(app);
 
-    let response = server.get("/health").await;
+    let response = server.get("/health/ready").await;
     assert_eq!(response.status_code(), StatusCode::OK);
 }
 
@@ -805,6 +824,8 @@ async fn test_db_crud_lifecycle() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
 
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
@@ -825,9 +846,24 @@ async fn test_db_crud_lifecycle() {
     let content_type_val =
         axum::http::header::HeaderValue::from_static("application/json; charset=utf-8");
 
+    // ── GET: read from empty DB ─────────────────────────────────────────────
+    let get_empty = server
+        .get("/api/v1/newsfeed?limit=10&sort=desc")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(accept.clone(), accept_val.clone())
+        .await;
+    assert_eq!(get_empty.status_code(), StatusCode::OK);
+    let empty_body: serde_json::Value = get_empty.json();
+    assert_eq!(empty_body["Status"], "Success");
+    assert_eq!(empty_body["Count"].as_i64().unwrap_or(-1), 0);
+    assert!(empty_body["Result"].as_array().unwrap().is_empty());
+
     // ── POST: create a record ─────────────────────────────────────────────────
     let post_resp = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -849,7 +885,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── GET: read back the created record ─────────────────────────────────────
     let get_resp = server
-        .get("/api/newsfeed?limit=10&sort=desc")
+        .get("/api/v1/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -863,7 +899,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── GET: ETag caching — second identical GET should return 304 ────────────
     let first_etag = server
-        .get("/api/newsfeed?limit=10&sort=desc")
+        .get("/api/v1/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -876,7 +912,7 @@ async fn test_db_crud_lifecycle() {
         .to_owned();
 
     let cached_resp = server
-        .get("/api/newsfeed?limit=10&sort=desc")
+        .get("/api/v1/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -891,7 +927,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── GET: ETag mismatch should return 200 OK ────────────
     let mismatch_resp = server
-        .get("/api/newsfeed?limit=10&sort=desc")
+        .get("/api/v1/newsfeed?limit=10&sort=desc")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -906,7 +942,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── PUT: update the record ────────────────────────────────────────────────
     let put_resp = server
-        .put("/api/newsfeed")
+        .put("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -930,7 +966,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── PUT: missing title should 422 ─────────────────────────────────────────
     let put_no_title = server
-        .put("/api/newsfeed")
+        .put("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -945,7 +981,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── PUT: bad Accept header should 400 ─────────────────────────────────────
     let put_bad_header = server
-        .put("/api/newsfeed")
+        .put("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -963,7 +999,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── DELETE: remove the record ─────────────────────────────────────────────
     let delete_resp = server
-        .delete("/api/newsfeed")
+        .delete("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -984,7 +1020,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── DELETE: missing title should 422 ──────────────────────────────────────
     let delete_no_title = server
-        .delete("/api/newsfeed")
+        .delete("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1002,7 +1038,7 @@ async fn test_db_crud_lifecycle() {
 
     // ── DELETE: bad Accept header should 400 ──────────────────────────────────
     let delete_bad_header = server
-        .delete("/api/newsfeed")
+        .delete("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1021,7 +1057,7 @@ async fn test_db_crud_lifecycle() {
     let unknown_verb = server
         .method(
             axum::http::Method::from_bytes(b"PATCH").unwrap(),
-            "/api/newsfeed",
+            "/api/v1/newsfeed",
         )
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
@@ -1048,7 +1084,7 @@ async fn test_post_invalid_header_charset() {
     let server = create_test_server();
 
     let response = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1073,7 +1109,7 @@ async fn test_post_invalid_header_charset() {
 async fn test_post_db_error() {
     let server = create_test_server();
     let response = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1089,7 +1125,8 @@ async fn test_post_db_error() {
         .bytes(axum::body::Bytes::from(
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Valid title, but DB will fail",
-                "feed_url": "http://example.com"
+                "feed_url": "http://example.com",
+                "publish_date": "2026-07-26"
             }]))
             .unwrap(),
         ))
@@ -1106,7 +1143,7 @@ async fn test_post_db_error() {
 async fn test_get_db_error() {
     let server = create_test_server();
     let response = server
-        .get("/api/newsfeed")
+        .get("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1128,7 +1165,7 @@ async fn test_get_db_error() {
 async fn test_put_db_error() {
     let server = create_test_server();
     let response = server
-        .put("/api/newsfeed")
+        .put("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1160,7 +1197,7 @@ async fn test_put_db_error() {
 async fn test_delete_db_error() {
     let server = create_test_server();
     let response = server
-        .delete("/api/newsfeed")
+        .delete("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1192,7 +1229,7 @@ async fn test_delete_db_error() {
 async fn test_get_invalid_accept_header() {
     let server = create_test_server();
     let response = server
-        .get("/api/newsfeed")
+        .get("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1220,6 +1257,8 @@ async fn test_db_partial_failure() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
         |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
@@ -1242,7 +1281,7 @@ async fn test_db_partial_failure() {
     // The second could theoretically succeed if it existed, but since neither exists,
     // they will both fail. But even one failure triggers BAD_REQUEST.
     let put_resp = server
-        .put("/api/newsfeed")
+        .put("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1266,16 +1305,16 @@ async fn test_db_partial_failure() {
         ))
         .await;
 
-    // It should return BAD_REQUEST because there's a partial failure
-    assert_eq!(put_resp.status_code(), StatusCode::BAD_REQUEST);
+    // It should return OK because non-existent updates are now Skipped, not Errors
+    assert_eq!(put_resp.status_code(), StatusCode::OK);
 
     let body: serde_json::Value = put_resp.json();
     assert_eq!(body["Status"], "Success");
     assert!(
         body["FailedItems"]
             .as_array()
-            .map(|a| !a.is_empty())
-            .unwrap_or(false)
+            .map(|a| a.is_empty())
+            .unwrap_or(true)
     );
 }
 
@@ -1293,6 +1332,8 @@ async fn test_db_true_partial_success() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
         |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
@@ -1314,7 +1355,7 @@ async fn test_db_true_partial_success() {
 
     // POST two feeds: feed1 (missing feed_url -> error) and feed2 (valid -> success)
     let post_resp = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1338,10 +1379,7 @@ async fn test_db_true_partial_success() {
         .await;
 
     let body: serde_json::Value = post_resp.json();
-    assert_eq!(body["Status"], "Success");
-    assert_eq!(body["Message"], "Partial");
-    assert_eq!(body["Result"].as_array().unwrap().len(), 1);
-    assert_eq!(body["FailedItems"].as_array().unwrap().len(), 1);
+    assert_eq!(body["Status"], "Error");
 }
 
 #[tokio::test]
@@ -1350,7 +1388,7 @@ async fn test_cud_endpoint_unsupported_content_type() {
     let valid_api_key = "nf_test_key_123";
 
     let response = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -1374,7 +1412,7 @@ async fn test_cud_endpoint_deny_unknown_fields_http_400() {
     let valid_api_key = "nf_test_key_123";
 
     let response = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(valid_api_key),
@@ -1407,7 +1445,7 @@ async fn test_cud_endpoint_deny_unknown_fields_http_400() {
 async fn test_malformed_json_payload_returns_generic_error_c6() {
     let server = create_test_server();
     let response = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static("nf_test_key_123"),
@@ -1446,6 +1484,8 @@ async fn test_cud_endpoint_partial_batch_failure_response() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
         |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
@@ -1461,7 +1501,7 @@ async fn test_cud_endpoint_partial_batch_failure_response() {
     let api_key = "nf_test_key_123";
 
     let post_resp = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1490,12 +1530,9 @@ async fn test_cud_endpoint_partial_batch_failure_response() {
         ))
         .await;
 
-    assert_eq!(post_resp.status_code(), StatusCode::OK);
+    assert_eq!(post_resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = post_resp.json();
-    assert_eq!(body["Status"], "Success");
-    assert_eq!(body["Message"], "Partial");
-    assert_eq!(body["Result"].as_array().unwrap().len(), 1);
-    assert_eq!(body["FailedItems"].as_array().unwrap().len(), 1);
+    assert_eq!(body["Status"], "Error");
 }
 
 #[tokio::test]
@@ -1526,6 +1563,8 @@ async fn test_db_conflict_skipped() {
         allowed_origins: "http://localhost".to_string(),
         rate_limit_rps: 100,
         rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
     };
     let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
         |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
@@ -1547,7 +1586,7 @@ async fn test_db_conflict_skipped() {
 
     // 1. Insert a new record
     let post_resp1 = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1567,7 +1606,7 @@ async fn test_db_conflict_skipped() {
 
     // 2. Insert it again, expecting "Skipped" and overall 200 OK since we don't error out on conflict for bulk insertions
     let post_resp2 = server
-        .post("/api/newsfeed")
+        .post("/api/v1/newsfeed")
         .add_header(
             axum::http::header::HeaderName::from_static("x-api-key"),
             axum::http::header::HeaderValue::from_static(api_key),
@@ -1593,10 +1632,82 @@ async fn test_db_conflict_skipped() {
     let results = body["Result"].as_array().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["Status"], "Skipped");
-    assert!(
-        results[0]["Message"]
-            .as_str()
-            .unwrap()
-            .contains("already exists")
+    assert!(results[0]["Message"].as_str().unwrap() == "SKIPPED_EXISTS");
+}
+
+#[tokio::test]
+async fn test_cud_timeout_408() {
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 0, // Artificially low timeout (0s will timeout instantly)
+    };
+
+    // We configure the mock DB to take a while to fail (1 second) so the 0s route timeout trips first.
+    let fake_pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_millis(1000))
+        .connect_lazy("postgres://fake:fake@192.0.2.1/fake") // 192.0.2.1 is TEST-NET-1, usually blackholed
+        .expect("Failed to create lazy pool");
+
+    let plaintext_key = "nf_test_key_123";
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(plaintext_key.as_bytes());
+    let hash_bytes: [u8; 32] = hasher.finalize().into();
+
+    let state = std::sync::Arc::new(AppState {
+        is_healthy: std::sync::atomic::AtomicBool::new(true).into(),
+        db: DbPool::Postgres(fake_pool),
+        api_keys: vec![hash_bytes],
+    });
+
+    let app = newsfeed_server::router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+
+    let server = TestServer::new(app);
+
+    let response = server
+        .post("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Valid title, but will timeout",
+                "feed_url": "http://example.com",
+                "publish_date": "2026-07-26"
+            }]))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(
+        response.status_code(),
+        axum::http::StatusCode::REQUEST_TIMEOUT
     );
 }

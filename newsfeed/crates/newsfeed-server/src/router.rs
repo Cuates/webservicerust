@@ -9,8 +9,11 @@
 
 use std::sync::Arc;
 
-use axum::{Router, middleware as axum_middleware, response::IntoResponse, routing::get};
+use axum::{
+    Router, handler::Handler, middleware as axum_middleware, response::IntoResponse, routing::get,
+};
 use tower_http::{
+    catch_panic::CatchPanicLayer,
     cors::CorsLayer,
     limit::RequestBodyLimitLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -20,7 +23,9 @@ use tower_http::{
 use utoipa::OpenApi;
 
 use newsfeed_config::AppConfig;
-use newsfeed_constants::http::{API_ROUTE_PREFIX, HEALTH_ROUTE, PROJECT_NAME};
+use newsfeed_constants::http::{
+    API_ROUTE_PREFIX, HEALTH_LIVE_ROUTE, HEALTH_READY_ROUTE, PROJECT_NAME,
+};
 use newsfeed_db::pool::AppState;
 
 use crate::handlers;
@@ -31,6 +36,28 @@ use tower_governor::governor::GovernorConfigBuilder;
 
 /// Maximum accepted request body size for CUD endpoints (bytes).
 const MAX_BODY_BYTES: usize = 1024 * 1024; // 1 MiB
+
+#[allow(clippy::needless_pass_by_value)]
+fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    let details = if let Some(s) = err.downcast_ref::<String>() {
+        s.clone()
+    } else if let Some(s) = err.downcast_ref::<&str>() {
+        s.to_string()
+    } else {
+        "Unknown panic".to_string()
+    };
+    tracing::error!("Service panicked: {details}");
+
+    let payload = newsfeed_models::ApiResponse::<serde_json::Value>::error_with_code(
+        ResponseCode::INTERNAL_ERROR,
+        "Internal Server Error",
+    );
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        axum::Json(payload),
+    )
+        .into_response()
+}
 
 /// Build and return the fully-configured Axum `Router`.
 #[allow(clippy::expect_used)]
@@ -64,17 +91,23 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
 
     let newsfeed_path = format!("{API_ROUTE_PREFIX}/{PROJECT_NAME}");
 
+    let standard_timeout = TimeoutLayer::with_status_code(
+        axum::http::StatusCode::REQUEST_TIMEOUT,
+        std::time::Duration::from_secs(cfg.timeout_standard_secs),
+    );
+
+    let extended_timeout = TimeoutLayer::with_status_code(
+        axum::http::StatusCode::REQUEST_TIMEOUT,
+        std::time::Duration::from_secs(cfg.timeout_cud_secs),
+    );
+
     let api_routes = Router::new()
         .route(
             &newsfeed_path,
-            get(handlers::get::handler)
-                .post(handlers::cud::post_handler)
-                .put(handlers::cud::put_handler)
-                .delete(handlers::cud::delete_handler),
-        )
-        .route(
-            "/api-docs/openapi.json",
-            get(|| async { axum::Json(ApiDoc::openapi()) }),
+            get(handlers::get::handler.layer(standard_timeout))
+                .post(handlers::cud::post_handler.layer(extended_timeout))
+                .put(handlers::cud::put_handler.layer(extended_timeout))
+                .delete(handlers::cud::delete_handler.layer(extended_timeout)),
         )
         .layer(axum_middleware::from_fn_with_state(
             Arc::clone(&state),
@@ -83,16 +116,23 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         .layer(governor_layer);
 
     Router::new()
-        // ── Health check (no auth required) ──────────────────────────────────
-        .route(HEALTH_ROUTE, get(handlers::health::handler))
+        // ── Health checks & Docs (no auth required) ───────────────────────────
+        .route(
+            HEALTH_LIVE_ROUTE,
+            get(handlers::health::live_handler.layer(standard_timeout)),
+        )
+        .route(
+            HEALTH_READY_ROUTE,
+            get(handlers::health::ready_handler.layer(standard_timeout)),
+        )
+        .route(
+            "/api-docs/openapi.json",
+            get((|| async { axum::Json(ApiDoc::openapi()) }).layer(standard_timeout)),
+        )
         // ── Authenticated Newsfeed routes ─────────────────────────────────────
         .merge(api_routes)
         // ── Global Middleware stack ───────────────────────────────────────────
         .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
-        .layer(TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            std::time::Duration::from_secs(30),
-        ))
         .layer(cors)
         .layer(
             tower::ServiceBuilder::new()
@@ -104,6 +144,8 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         .with_state(state)
         // ── Catch-all 404 ─────────────────────────────────────────────────────
         .fallback(handlers::not_found::handler)
+        // ── Catch panics (outermost) ──────────────────────────────────────────
+        .layer(CatchPanicLayer::custom(handle_panic))
 }
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -166,6 +208,8 @@ mod tests {
             rate_limit_burst: 30,
             trust_proxy: false,
             trusted_proxy_cidr: None,
+            timeout_standard_secs: 10,
+            timeout_cud_secs: 60,
         };
         let _ = build_cors(&cfg);
     }
@@ -184,6 +228,8 @@ mod tests {
             rate_limit_burst: 30,
             trust_proxy: false,
             trusted_proxy_cidr: None,
+            timeout_standard_secs: 10,
+            timeout_cud_secs: 60,
         };
         let _ = build_cors(&cfg);
     }
@@ -202,8 +248,22 @@ mod tests {
             rate_limit_burst: 30,
             trust_proxy: false,
             trusted_proxy_cidr: None,
+            timeout_standard_secs: 10,
+            timeout_cud_secs: 60,
         };
         // Should not panic — the valid origin is kept, the invalid one is skipped with a warning.
         let _ = build_cors(&cfg);
+    }
+
+    #[test]
+    fn test_handle_panic() {
+        let r1 = super::handle_panic(Box::new("String panic".to_string()));
+        assert_eq!(r1.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+
+        let r2 = super::handle_panic(Box::new("str panic"));
+        assert_eq!(r2.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+
+        let r3 = super::handle_panic(Box::new(12345));
+        assert_eq!(r3.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

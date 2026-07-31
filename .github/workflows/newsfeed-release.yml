@@ -4,11 +4,77 @@ on:
   push:
     tags:
       - 'newsfeed-v*'
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type (major, minor, patch)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
 
 jobs:
+  bump-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump Version
+        id: bump
+        run: |
+          CURRENT_VERSION=$(grep -oP '^version\s*=\s*"\K.*?(?=")' Cargo.toml)
+          IFS='.' read -ra ADDR <<< "$CURRENT_VERSION"
+          MAJOR="${ADDR[0]}"
+          MINOR="${ADDR[1]}"
+          PATCH="${ADDR[2]}"
+          
+          if [ "${{ github.event.inputs.version_bump }}" == "major" ]; then
+            MAJOR=$((MAJOR+1))
+            MINOR=0
+            PATCH=0
+          elif [ "${{ github.event.inputs.version_bump }}" == "minor" ]; then
+            MINOR=$((MINOR+1))
+            PATCH=0
+          else
+            PATCH=$((PATCH+1))
+          fi
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          sed -i "s/^version = "$CURRENT_VERSION"/version = "$NEW_VERSION"/" Cargo.toml
+          
+          cargo update -p newsfeed-server --workspace || cargo check
+          
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git tag "newsfeed-v$NEW_VERSION"
+          
+          git push origin HEAD:${{ github.ref_name }}
+          git push origin "newsfeed-v$NEW_VERSION"
+          
+          echo "new_tag=newsfeed-v$NEW_VERSION" >> $GITHUB_OUTPUT
+
   build-and-archive:
     name: Build and Archive
     runs-on: ${{ matrix.os }}
+    needs: [bump-version]
+    if: always() && (github.event_name == 'push' || needs.bump-version.result == 'success')
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -23,6 +89,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref }}
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -44,7 +112,7 @@ jobs:
           cp README.md release_assets/
           cp LICENSE release_assets/
           cd release_assets
-          tar -czvf ../newsfeed-server-${{ github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }} *
+          tar -czvf ../newsfeed-server-${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }} *
 
       - name: Prepare Assets (Windows)
         if: matrix.os == 'windows-latest'
@@ -54,13 +122,13 @@ jobs:
           Copy-Item .env.example -Destination release_assets/
           Copy-Item README.md -Destination release_assets/
           Copy-Item LICENSE -Destination release_assets/
-          Compress-Archive -Path release_assets\* -DestinationPath newsfeed-server-${{ github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }} -Force
+          Compress-Archive -Path release_assets\* -DestinationPath newsfeed-server-${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }} -Force
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: newsfeed-server-${{ matrix.os }}
-          path: newsfeed-server-${{ github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }}
+          path: newsfeed-server-${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref_name }}-${{ matrix.os }}${{ matrix.archive_ext }}
 
   release:
     name: Create GitHub Release
@@ -68,6 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    if: always() && needs.build-and-archive.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -83,7 +152,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref_name }}
+          name: Release ${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && needs.bump-version.outputs.new_tag || github.ref_name }}
           draft: false
           prerelease: false
           files: artifacts/*

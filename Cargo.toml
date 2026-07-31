@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "4.1.0"
+version = "4.2.0"
 edition = "2024"
 authors  = ["Cuates"]
 license  = "MIT"
@@ -35,7 +35,7 @@ missing_panics_doc      = "allow"
 axum           = { version = "0.8",  features = ["macros"] }
 tokio          = { version = "1",    features = ["rt-multi-thread", "net", "signal", "macros"] }
 tower          = { version = "0.5" }
-tower-http     = { version = "0.6",  features = ["cors", "trace", "request-id", "limit", "timeout"] }
+tower-http     = { version = "0.6",  features = ["cors", "trace", "request-id", "limit", "timeout", "catch-panic"] }
 tower_governor = { version = "0.8" }
 
 # Database

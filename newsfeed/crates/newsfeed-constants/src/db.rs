@@ -23,20 +23,6 @@ impl std::fmt::Display for DatabaseType {
     }
 }
 
-// ── Stored procedure / function names ─────────────────────────────────────────
-
-/// Stored procedure and function names for each database engine.
-pub struct ProcedureMap;
-
-impl ProcedureMap {
-    pub const MARIADB_EXTRACT: &'static str = "extractnewsfeed";
-    pub const MARIADB_CUD: &'static str = "insertupdatedeletenewsfeed";
-    pub const POSTGRES_EXTRACT: &'static str = "extractnewsfeed";
-    pub const POSTGRES_CUD: &'static str = "insertupdatedeletenewsfeed";
-    pub const MSSQL_EXTRACT: &'static str = "dbo.extractNewsFeed";
-    pub const MSSQL_CUD: &'static str = "dbo.insertupdatedeleteNewsFeed";
-}
-
 // ── Operation modes (passed as the first argument to every procedure) ─────────
 
 /// The `optionMode` value passed to each stored procedure / function.
@@ -99,13 +85,5 @@ mod tests {
         assert_eq!(DatabasePort::MARIADB, 3306);
         assert_eq!(DatabasePort::POSTGRES, 5432);
         assert_eq!(DatabasePort::MSSQL, 1433);
-    }
-
-    #[test]
-    fn test_procedure_map_constants() {
-        assert_eq!(ProcedureMap::MARIADB_EXTRACT, "extractnewsfeed");
-        assert_eq!(ProcedureMap::POSTGRES_CUD, "insertupdatedeletenewsfeed");
-        assert_eq!(ProcedureMap::MSSQL_EXTRACT, "dbo.extractNewsFeed");
-        assert_eq!(ProcedureMap::MSSQL_CUD, "dbo.insertupdatedeleteNewsFeed");
     }
 }

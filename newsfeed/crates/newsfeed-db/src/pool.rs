@@ -7,12 +7,12 @@ use newsfeed_config::{AppConfig, DatabaseConfig, DatabaseTarget};
 
 use crate::error::DbError;
 
-// ── MSSQL pool type alias ─────────────────────────────────────────────────────
+//  MSSQL pool type alias
 
 /// Type alias for the bb8-managed MSSQL connection pool.
 pub type MssqlPool = bb8::Pool<bb8_tiberius::ConnectionManager>;
 
-// ── Active database pool ──────────────────────────────────────────────────────
+//  Active database pool
 
 /// Holds the single active database pool for the configured `DATABASE_TARGET`.
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl DbPool {
     }
 }
 
-// ── Application state ─────────────────────────────────────────────────────────
+//  Application state
 
 /// Shared state injected into every Axum handler via `State<Arc<AppState>>`.
 #[derive(Debug)]
@@ -74,7 +74,16 @@ impl AppState {
     /// - Applies pool-tuning env vars to sqlx and bb8 pools.
     #[allow(clippy::too_many_lines)]
     pub async fn init(app_cfg: &AppConfig, db_cfg: &DatabaseConfig) -> Result<Self, DbError> {
-        // ── Startup guard: refuse to start with zero API keys ─────────────────
+        //  Startup guard: refuse to start with zero API keys
+        let required_pool_size =
+            (u32::try_from(app_cfg.rate_limit_rps).unwrap_or(u32::MAX) / 10).max(1);
+        if db_cfg.db_pool_max < required_pool_size {
+            return Err(DbError::Config(format!(
+                "Boot-time assertion failed: DB_POOL_MAX ({}) is dangerously low compared to RATE_LIMIT_RPS ({}). Must be >= {} to prevent thread starvation.",
+                db_cfg.db_pool_max, app_cfg.rate_limit_rps, required_pool_size
+            )));
+        }
+
         let api_keys_set = app_cfg.api_keys_set();
         if api_keys_set.is_empty() {
             return Err(DbError::Config(
@@ -88,7 +97,7 @@ impl AppState {
         for key_hex in &api_keys_set {
             let mut buf = [0u8; 32];
             hex::decode_to_slice(key_hex, &mut buf).map_err(|_| {
-                let prefix = if key_hex.len() > 8 { &key_hex[..8] } else { key_hex };
+                let prefix: String = key_hex.chars().take(8).collect();
                 DbError::Config(format!(
                     "API_KEYS contains malformed hex string (prefix '{prefix}...'). Must be 64 hex characters."
                 ))
@@ -217,7 +226,7 @@ impl AppState {
     }
 }
 
-// ── Unit tests ────────────────────────────────────────────────────────────────
+//  Unit tests
 
 #[cfg(test)]
 mod tests {
@@ -240,6 +249,8 @@ mod tests {
             rate_limit_burst: 20,
             trust_proxy: false,
             trusted_proxy_cidr: None,
+            timeout_standard_secs: 10,
+            timeout_cud_secs: 60,
         }
     }
 
@@ -261,7 +272,26 @@ mod tests {
         }
     }
 
-    // ── AppState::init error paths ────────────────────────────────────────────
+    //  AppState::init error paths
+
+    #[tokio::test]
+    async fn test_init_fails_with_dangerously_low_pool_size() {
+        let mut app_cfg = postgres_app_cfg("test_key");
+        app_cfg.rate_limit_rps = 100; // Requires pool size >= 10
+        let mut db_cfg = postgres_db_cfg();
+        db_cfg.db_pool_max = 2;
+
+        let result = AppState::init(&app_cfg, &db_cfg).await;
+        assert!(
+            result.is_err(),
+            "expected Err for dangerously low pool size"
+        );
+        if let Err(DbError::Config(msg)) = result {
+            assert!(msg.contains("dangerously low compared to RATE_LIMIT_RPS"));
+        } else {
+            panic!("Expected DbError::Config");
+        }
+    }
 
     /// When API_KEYS is empty, `init` must return Err(DbError::Config).
     #[tokio::test]
@@ -322,7 +352,7 @@ mod tests {
         );
     }
 
-    // ── DbPool::ping error paths ──────────────────────────────────────────────
+    //  DbPool::ping error paths
 
     /// Postgres lazy pool — ping must fail (no real server behind fake URL).
     #[tokio::test]
@@ -371,7 +401,7 @@ mod tests {
         assert!(result.is_err(), "expected ping error from fake MSSQL pool");
     }
 
-    // ── AppState::init configuration error paths ──────────────────────────────
+    //  AppState::init configuration error paths
 
     #[tokio::test]
     async fn test_init_postgres_missing_url() {

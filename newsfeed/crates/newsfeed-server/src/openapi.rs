@@ -4,7 +4,8 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::handlers::health::handler,
+        crate::handlers::health::live_handler,
+        crate::handlers::health::ready_handler,
         crate::handlers::get::handler,
         crate::handlers::cud::post_handler,
         crate::handlers::cud::put_handler,

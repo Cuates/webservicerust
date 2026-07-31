@@ -18,21 +18,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Skip database checks in sqlx since we don't have a live DB in CI yet
   SQLX_OFFLINE: true
 
 jobs:
   check:
-    name: Check, Lint, and Test (${{ matrix.database_target }} on ${{ matrix.os }})
+    name: Check, Lint, and Unit Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        database_target: [postgres, mariadb, mssql]
-
-    env:
-      DATABASE_TARGET: ${{ matrix.database_target }}
 
     steps:
       - name: Checkout repository
@@ -61,7 +56,6 @@ jobs:
           # RUSTSEC-2026-0099: sct certificate timestamp advisory (transitive via tiberius 0.12)
           # RUSTSEC-2026-0104: idna domain name handling advisory (transitive via tiberius 0.12 / older url)
           # RUSTSEC-2025-0134: rustls 0.21 TLS stack advisory (transitive via tiberius 0.12)
-          # Future Plan (last checked: 2026-07-26): Remove these and re-evaluate once tiberius ships a new rustls version (>= 0.22 or 0.23).
           cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2025-0134
 
       - name: Cargo Check
@@ -70,13 +64,30 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings
 
+      - name: Run Unit Tests
+        run: cargo test --workspace --lib --bins -- --include-ignored
+
+  integration-test:
+    name: Integration Tests (${{ matrix.database_target }})
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        database_target: [postgres, mariadb, mssql]
+
+    env:
+      DATABASE_TARGET: ${{ matrix.database_target }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Newsfeed Environment
+        uses: ./.github/actions/newsfeed-setup
+        
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run Tests & Enforce Coverage (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Run Integration Tests & Enforce Coverage
         run: cargo llvm-cov --workspace --all-features --ignore-filename-regex ".*main\.rs" --fail-under-lines 99 --fail-under-functions 99 -- --include-ignored
-
-      - name: Run Unit Tests (Windows & macOS)
-        if: matrix.os != 'ubuntu-latest'
-        run: cargo test --workspace --lib --bins -- --include-ignored

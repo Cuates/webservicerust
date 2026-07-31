@@ -11,7 +11,7 @@
 /// - `ALLOWED_ORIGINS`          — comma-separated list of allowed CORS origins
 /// - `RATE_LIMIT_RPS`           — token-bucket replenish rate (requests/sec per IP)
 /// - `RATE_LIMIT_BURST`         — token-bucket burst capacity
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct AppConfig {
     /// TCP bind address (e.g. `127.0.0.1` or `0.0.0.0`).
     #[serde(default = "default_bind_host")]
@@ -46,6 +46,22 @@ pub struct AppConfig {
     /// Optional comma-separated CIDR blocks for trusted proxies (e.g. 10.0.0.0/8).
     /// If `trust_proxy=true` but this is empty, defaults to 127.0.0.1/32, `::1/128`.
     pub trusted_proxy_cidr: Option<String>,
+
+    /// Timeout for standard GET routes in seconds
+    #[serde(default = "default_timeout_standard")]
+    pub timeout_standard_secs: u64,
+
+    /// Timeout for CUD (Create, Update, Delete) routes in seconds
+    #[serde(default = "default_timeout_cud")]
+    pub timeout_cud_secs: u64,
+}
+
+fn default_timeout_standard() -> u64 {
+    10
+}
+
+fn default_timeout_cud() -> u64 {
+    60
 }
 
 fn default_false() -> bool {
@@ -93,6 +109,22 @@ impl AppConfig {
     }
 }
 
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppConfig")
+            .field("bind_host", &self.bind_host)
+            .field("app_port", &self.app_port)
+            .field("rust_log", &self.rust_log)
+            .field("api_keys", &"***REDACTED***")
+            .field("allowed_origins", &self.allowed_origins)
+            .field("rate_limit_rps", &self.rate_limit_rps)
+            .field("rate_limit_burst", &self.rate_limit_burst)
+            .field("trust_proxy", &self.trust_proxy)
+            .field("trusted_proxy_cidr", &self.trusted_proxy_cidr)
+            .finish_non_exhaustive()
+    }
+}
+
 fn default_bind_host() -> String {
     "127.0.0.1".to_owned()
 }
@@ -124,6 +156,8 @@ mod tests {
             rate_limit_burst: 30,
             trust_proxy: false,
             trusted_proxy_cidr: None,
+            timeout_standard_secs: 10,
+            timeout_cud_secs: 60,
         }
     }
 
@@ -236,5 +270,13 @@ mod tests {
         cfg2.trusted_proxy_cidr = Some("   ".to_string());
         let cidrs2 = cfg2.proxy_cidrs();
         assert_eq!(cidrs2.len(), 2);
+    }
+
+    #[test]
+    fn test_app_config_debug_redacted() {
+        let cfg = make_config("secret_key_123", "http://localhost");
+        let debug_str = format!("{:?}", cfg);
+        assert!(!debug_str.contains("secret_key_123"));
+        assert!(debug_str.contains("***REDACTED***"));
     }
 }

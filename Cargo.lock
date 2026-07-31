@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-config"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "envy",
  "ipnet",
@@ -1476,14 +1476,14 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-constants"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "newsfeed-db"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "bb8",
  "bb8-tiberius",
@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-models"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1515,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-server"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "axum",
  "axum-test",
@@ -1549,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-service"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "bb8",
  "bb8-tiberius",
@@ -2989,6 +2989,7 @@ checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "bitflags 2.13.0",
  "bytes",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",

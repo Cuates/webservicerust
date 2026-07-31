@@ -71,7 +71,6 @@ webservicerust
 |   |   +---newsfeed-db/
 |   |   |   |   Cargo.toml
 |   |   |   |   README.md
-|   |   |   |   test_columns.rs
 |   |   |   |   
 |   |   |   +---migrations/
 |   |   |   |   +---mariadb/
@@ -91,11 +90,7 @@ webservicerust
 |   |   |   |       shared.rs
 |   |   |   |       
 |   |   |   \---tests/
-|   |   |       |   integration_test.rs
-|   |   |       \---sql/
-|   |   |               init_mariadb.sql
-|   |   |               init_mssql.sql
-|   |   |               init_postgres.sql
+|   |   |           integration_test.rs
 |   |   |           
 |   |   +---newsfeed-models/
 |   |   |   |   Cargo.toml

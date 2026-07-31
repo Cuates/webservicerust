@@ -9,7 +9,10 @@ use tracing::instrument;
 use newsfeed_constants::db::OptionMode;
 use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow, SortOrder};
 
-use crate::{error::DbError, shared::parse_status_rows};
+use crate::{
+    error::DbError,
+    shared::{parse_status_rows, row_to_news_feed_row},
+};
 
 // ── Extract ───────────────────────────────────────────────────────────────────
 
@@ -33,13 +36,13 @@ pub async fn extract_feed(
     use sqlx::Row;
     let mut feed_rows = Vec::with_capacity(raw_rows.len());
     for row in raw_rows {
-        feed_rows.push(NewsFeedRow {
-            titlereturn: row.try_get(0).ok().flatten(),
-            imageurlreturn: row.try_get(1).ok().flatten(),
-            feedurlreturn: row.try_get(2).ok().flatten(),
-            actualurlreturn: row.try_get(3).ok().flatten(),
-            publishdatereturn: row.try_get(4).ok().flatten(),
-        });
+        feed_rows.push(row_to_news_feed_row(
+            row.try_get(0)?,
+            row.try_get(1)?,
+            row.try_get(2)?,
+            row.try_get(3)?,
+            row.try_get(4)?,
+        ));
     }
 
     tracing::debug!("MariaDB extract returned {} row(s)", feed_rows.len());
@@ -64,6 +67,18 @@ pub async fn cud_feed(
         .await?;
 
     parse_status_rows(rows)
+}
+
+/// Query the max `modified_date` across all items
+#[instrument(skip(pool), level = "debug")]
+pub async fn max_modified_date(
+    pool: &sqlx::MySqlPool,
+) -> Result<Option<String>, crate::error::DbError> {
+    let row: (Option<String>,) =
+        sqlx::query_as("SELECT CAST(MAX(modified_date) AS CHAR) FROM NewsFeed")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
 }
 
 #[cfg(test)]

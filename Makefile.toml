@@ -84,12 +84,16 @@ args = [
     "audit",
     # Ignored because `tiberius = "0.12.3"` is locked to `rustls 0.21` which relies on older webpki/pemfile versions.
     # Future Plan: Remove these once `tiberius` updates to `rustls >= 0.22` or `0.23`.
-    "--ignore", "RUSTSEC-2023-0071", 
-    "--ignore", "RUSTSEC-2026-0097", 
     "--ignore", "RUSTSEC-2026-0098", 
     "--ignore", "RUSTSEC-2026-0099", 
     "--ignore", "RUSTSEC-2026-0104", 
     "--ignore", "RUSTSEC-2025-0134",
+    # Ignored because `tiberius = "0.12.3"` depends on `winauth` -> `rand = "0.7.3"`.
+    "--ignore", "RUSTSEC-2026-0097",
+    # Ignored because `sqlx = "0.8.6"` transitively depends on `rsa = "0.9.10"`, which has no fixed upgrade available yet.
+    "--ignore", "RUSTSEC-2023-0071",
+    # Ignored because `sqlx = "0.8.6"` transitively depends on `event-listener = "5.4.1"`.
+    "--ignore", "RUSTSEC-2026-0221",
 ]
 
 [tasks.machete]
@@ -185,6 +189,19 @@ args = ["compose", "logs", "-f", "newsfeed-server"]
 [tasks.key-gen]
 workspace = false
 description = "Generate a new API key"
+windows_alias = "key-gen-win"
+linux_alias = "key-gen-nix"
+mac_alias = "key-gen-nix"
+
+[tasks.key-gen-win]
+workspace = false
+script_runner = "@shell"
+script = '''
+powershell -ExecutionPolicy Bypass -File .\scripts\generate-api-key.ps1
+'''
+
+[tasks.key-gen-nix]
+workspace = false
 script_runner = "@duckscript"
 script = '''
 exec bash scripts/generate-api-key.sh
@@ -193,6 +210,19 @@ exec bash scripts/generate-api-key.sh
 [tasks.key-revoke]
 workspace = false
 description = "Revoke an existing API key"
+windows_alias = "key-revoke-win"
+linux_alias = "key-revoke-nix"
+mac_alias = "key-revoke-nix"
+
+[tasks.key-revoke-win]
+workspace = false
+script_runner = "@shell"
+script = '''
+powershell -ExecutionPolicy Bypass -File .\scripts\revoke-api-key.ps1
+'''
+
+[tasks.key-revoke-nix]
+workspace = false
 script_runner = "@duckscript"
 script = '''
 exec bash scripts/revoke-api-key.sh

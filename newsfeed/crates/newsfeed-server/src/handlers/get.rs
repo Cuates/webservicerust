@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[utoipa::path(
     get,
-    path = "/api/newsfeed",
+    path = "/api/v1/newsfeed",
     params(
         newsfeed_models::ExtractParams
     ),
@@ -49,20 +49,34 @@ pub async fn handler(
     // ── 2. Validate / normalise query params ──────────────────────────────────
     let params = ExtractParams::from_map(&raw_params);
 
-    // ── 3. Execute extract ────────────────────────────────────────────────────
+    // ── 3. ETag check (Fast Path) ─────────────────────────────────────────────
+    let mut db_etag = None;
+    if let Ok(Some(max_date)) = newsfeed_service::feed_service::max_modified_date(&state).await {
+        let params_str = serde_json::to_string(&params).unwrap_or_default();
+        let etag_input = format!("{max_date}_{params_str}");
+        let hash = xxhash_rust::xxh64::xxh64(etag_input.as_bytes(), 0);
+        let etag = format!("\"{hash:016x}\"");
+
+        if let Some(if_none_match) = headers.get(IF_NONE_MATCH)
+            && if_none_match.as_bytes() == etag.as_bytes()
+        {
+            return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
+        }
+        db_etag = Some(etag);
+    }
+
+    // ── 4. Execute extract ────────────────────────────────────────────────────
     match extract_feed(&state, &params).await {
         Ok(rows) => {
             let response = ApiResponse::success(ResponseMessage::PROCESSED, rows);
             let body_bytes = serde_json::to_vec(&response).unwrap_or_default();
 
-            let hash = xxhash_rust::xxh64::xxh64(&body_bytes, 0);
-            let etag = format!("\"{hash:016x}\"");
-
-            if let Some(if_none_match) = headers.get(IF_NONE_MATCH)
-                && if_none_match.as_bytes() == etag.as_bytes()
-            {
-                return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
-            }
+            let etag = if let Some(e) = db_etag {
+                e
+            } else {
+                let hash = xxhash_rust::xxh64::xxh64(&body_bytes, 0);
+                format!("\"{hash:016x}\"")
+            };
 
             (
                 StatusCode::OK,

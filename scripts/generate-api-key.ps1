@@ -19,7 +19,9 @@ if (-not (Test-Path $EnvFile)) {
 }
 
 # ── Generate 32 random bytes → 64-character hex key ──────────────────────────
-$bytes  = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+$bytes  = New-Object byte[] 32
+$rng    = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
 $NewKey = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
 
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
