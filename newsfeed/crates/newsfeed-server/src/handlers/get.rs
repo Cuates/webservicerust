@@ -67,7 +67,11 @@ pub async fn handler(
             (
                 StatusCode::OK,
                 [
-                    (ETAG, etag.parse().unwrap()),
+                    (
+                        ETAG,
+                        etag.parse()
+                            .unwrap_or(axum::http::HeaderValue::from_static("")),
+                    ),
                     (
                         axum::http::header::CONTENT_TYPE,
                         axum::http::HeaderValue::from_static("application/json"),

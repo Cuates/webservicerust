@@ -27,7 +27,7 @@ These targets wrap the standard Cargo commands to act across the entire workspac
 | **`cargo make build-dev`** | Builds the unoptimized debug binary for rapid local development. | `cargo build` |
 | **`cargo make info`** | Prints out a highly formatted summary of the active Rust toolchain, operating system, and all workspace crates. | `duckscript` (custom) |
 | **`cargo make check`** | Quickly checks all workspace crates for compilation errors. | `cargo check --workspace` |
-| **`cargo make check:deadcode`** | Runs clippy specifically to deny any dead code across the workspace. | `cargo clippy --workspace -- -D dead_code` |
+| **`cargo make check-deadcode`** | Runs clippy specifically to deny any dead code across the workspace. | `cargo clippy --workspace -- -D dead_code` |
 | **`cargo make clean`** | Removes the `target/` directory and build artifacts. | `cargo clean` |
 | **`cargo make fix`** | Formats code and automatically applies clippy fixes. | `cargo fmt --all && cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings` |
 | **`cargo make audit`** | Scans dependency tree for security vulnerabilities. Explicitly ignores upstream `tiberius` constraints in CI. | `cargo audit` |

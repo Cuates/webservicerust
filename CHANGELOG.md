@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Database**: Standardized all three database engines (Postgres, MariaDB, MSSQL) on a unified JSON bulk insertion pattern (`cud_bulk_json_newsfeed`), eliminating per-item loops.
 - **Database**: Changed DB conflict-write operations to return a clear `Skipped` status (`CudStatus`) instead of a generic `Success` when records already exist or titles are unchanged.
 - **Testing**: Replaced deprecated static SQL files (`init_*.sql`) with full dynamic `testcontainers` integration.
+- **Security**: Ignored `RUSTSEC-2025-0134` (unmaintained `rustls-pemfile v1.0.4`) in `cargo audit` to unblock CI, as it is locked via `tiberius` which has not yet migrated to the `rustls 0.22+` ecosystem.
 - **Release**: Bumped workspace package version to `4.1.0`.
 
 ### Fixed
