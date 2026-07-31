@@ -379,8 +379,9 @@ async fn create_live_postgres_state(
             }
         }
         let init_pool = init_pool.expect("Failed to connect init pool to test postgres");
-        let sql = include_str!("../../newsfeed-db/tests/sql/init_postgres.sql")
-            .trim_start_matches('\u{feff}');
+        let sql =
+            include_str!("../../newsfeed-db/migrations/postgres/20260718000000_init_postgres.sql")
+                .trim_start_matches('\u{feff}');
         init_pool
             .execute(sql)
             .await
@@ -1095,6 +1096,10 @@ async fn test_post_db_error() {
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "DB_ERROR");
+    assert_eq!(body["Message"], "Internal Server Error");
 }
 
 #[tokio::test]
@@ -1113,6 +1118,10 @@ async fn test_get_db_error() {
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "DB_ERROR");
+    assert_eq!(body["Message"], "Internal Server Error");
 }
 
 #[tokio::test]
@@ -1141,6 +1150,10 @@ async fn test_put_db_error() {
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "DB_ERROR");
+    assert_eq!(body["Message"], "Internal Server Error");
 }
 
 #[tokio::test]
@@ -1169,6 +1182,10 @@ async fn test_delete_db_error() {
         .await;
 
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "DB_ERROR");
+    assert_eq!(body["Message"], "Internal Server Error");
 }
 
 #[tokio::test]
@@ -1383,6 +1400,36 @@ async fn test_cud_endpoint_deny_unknown_fields_http_400() {
     let body: serde_json::Value = response.json();
     assert_eq!(body["Status"], "Error");
     assert_eq!(body["Code"], "VALIDATION_ERROR");
+    assert_eq!(body["Message"], "Failed to read request body");
+}
+
+#[tokio::test]
+async fn test_malformed_json_payload_returns_generic_error_c6() {
+    let server = create_test_server();
+    let response = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("content-type"),
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            b"{malformed json string...".to_vec(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Status"], "Error");
+    assert_eq!(body["Code"], "BAD_REQUEST");
+    assert_eq!(body["Message"], "Failed to read request body");
 }
 
 #[tokio::test]
@@ -1463,4 +1510,93 @@ async fn test_not_found_handler_structure() {
     assert_eq!(body["Message"], "Not Found");
     assert_eq!(body["Count"], 0);
     assert_eq!(body["Result"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_db_conflict_skipped() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+    let api_key = "nf_test_key_123";
+    let accept = axum::http::header::ACCEPT;
+    let accept_val = axum::http::header::HeaderValue::from_static("application/json");
+    let content_type = axum::http::header::CONTENT_TYPE;
+    let content_type_val =
+        axum::http::header::HeaderValue::from_static("application/json; charset=utf-8");
+
+    // 1. Insert a new record
+    let post_resp1 = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(accept.clone(), accept_val.clone())
+        .add_header(content_type.clone(), content_type_val.clone())
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Conflict Test Title",
+                "feed_url": "http://example.com/feed",
+                "publish_date": "2026-07-24 00:00:00"
+            }]))
+            .unwrap(),
+        ))
+        .await;
+    assert_eq!(post_resp1.status_code(), StatusCode::CREATED);
+
+    // 2. Insert it again, expecting "Skipped" and overall 200 OK since we don't error out on conflict for bulk insertions
+    let post_resp2 = server
+        .post("/api/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(accept.clone(), accept_val.clone())
+        .add_header(content_type.clone(), content_type_val.clone())
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Conflict Test Title",
+                "feed_url": "http://example.com/feed",
+                "publish_date": "2026-07-24 00:00:00"
+            }]))
+            .unwrap(),
+        ))
+        .await;
+
+    // Should be CREATED because our implementation treats full success and skipped items similarly at top level unless we have errors
+    assert_eq!(post_resp2.status_code(), StatusCode::CREATED);
+    let body: serde_json::Value = post_resp2.json();
+    assert_eq!(body["Status"], "Success");
+
+    // The specific record should have status Skipped
+    let results = body["Result"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["Status"], "Skipped");
+    assert!(
+        results[0]["Message"]
+            .as_str()
+            .unwrap()
+            .contains("already exists")
+    );
 }

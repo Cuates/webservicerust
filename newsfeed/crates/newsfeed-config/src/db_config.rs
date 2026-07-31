@@ -8,7 +8,7 @@ use newsfeed_constants::db::DatabaseType;
 pub type DatabaseTarget = DatabaseType;
 
 /// Database connection parameters loaded from environment variables.
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct DatabaseConfig {
     /// Active database engine (`postgres` | `mariadb` | `mssql`).
     pub database_target: DatabaseTarget,
@@ -98,6 +98,35 @@ impl DatabaseConfig {
                 );
             }
         }
+    }
+}
+
+impl std::fmt::Debug for DatabaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseConfig")
+            .field("database_target", &self.database_target)
+            .field(
+                "postgres_url",
+                &self.postgres_url.as_ref().map(|_| "***REDACTED***"),
+            )
+            .field(
+                "mariadb_url",
+                &self.mariadb_url.as_ref().map(|_| "***REDACTED***"),
+            )
+            .field("mssql_host", &self.mssql_host)
+            .field("mssql_port", &self.mssql_port)
+            .field("mssql_database", &self.mssql_database)
+            .field("mssql_username", &self.mssql_username)
+            .field(
+                "mssql_password",
+                &self.mssql_password.as_ref().map(|_| "***REDACTED***"),
+            )
+            .field("db_mssql_encrypt", &self.db_mssql_encrypt)
+            .field("db_mssql_trust_cert", &self.db_mssql_trust_cert)
+            .field("db_pool_max", &self.db_pool_max)
+            .field("db_pool_min", &self.db_pool_min)
+            .field("db_acquire_timeout_secs", &self.db_acquire_timeout_secs)
+            .finish()
     }
 }
 
@@ -235,5 +264,19 @@ mod tests {
         assert_eq!(config.db_acquire_timeout_secs, 5);
         assert!(config.db_mssql_encrypt); // Now defaults to true
         assert!(!config.db_mssql_trust_cert);
+    }
+
+    #[test]
+    fn test_db_config_debug_redacted() {
+        let cfg = DatabaseConfig {
+            postgres_url: Some("postgres://secret:pass@localhost/db".to_owned()),
+            mariadb_url: Some("mysql://secret:pass@localhost/db".to_owned()),
+            mssql_password: Some("SecretPass123!".to_owned()),
+            ..base_config(DatabaseType::Postgres)
+        };
+        let debug_str = format!("{:?}", cfg);
+        assert!(debug_str.contains("***REDACTED***"));
+        assert!(!debug_str.contains("secret"));
+        assert!(!debug_str.contains("SecretPass123!"));
     }
 }

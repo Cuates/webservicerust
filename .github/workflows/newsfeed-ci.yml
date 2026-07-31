@@ -61,7 +61,7 @@ jobs:
           # RUSTSEC-2026-0099: sct certificate timestamp advisory (transitive via tiberius 0.12)
           # RUSTSEC-2026-0104: idna domain name handling advisory (transitive via tiberius 0.12 / older url)
           # RUSTSEC-2025-0134: rustls 0.21 TLS stack advisory (transitive via tiberius 0.12)
-          # Future Plan: Remove these once tiberius updates to rustls >= 0.22 or 0.23.
+          # Future Plan (last checked: 2026-07-26): Remove these and re-evaluate once tiberius ships a new rustls version (>= 0.22 or 0.23).
           cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2025-0134
 
       - name: Cargo Check

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `newsfeed-constants`
 
 This crate defines all the shared constants and static references used across the `newsfeed` workspace.
@@ -5,6 +6,7 @@ This crate defines all the shared constants and static references used across th
 ## Purpose
 
 To prevent hard-coded "magic strings" from being scattered across the codebase, this crate centralizes:
+
 - **Database Types**: `ProcedureMap` and `OptionMode` mappings.
 - **HTTP Routing**: Route paths and prefix constants.
 - **HTTP Responses**: Unified error codes (`ResponseCode` variants like `VALIDATION_ERROR`, `NOT_FOUND`, `ResponseMessage`) and `HeaderType` constants to eliminate inline magic strings.

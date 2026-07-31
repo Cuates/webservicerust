@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD031 MD032 MD022 -->
 # Troubleshooting
 
 This guide helps diagnose and resolve common issues encountered when setting up or running the Newsfeed web service.
@@ -18,7 +19,7 @@ The service enforces strict configuration validation at startup. If it fails to 
 ## 2. Database Connection Failures
 
 - **Issue**: The application panics with a `sqlx` or `tiberius` connection error at startup.
-- **Solution**: 
+- **Solution**:
   - Verify that your database is running and accessible from the machine (or Docker network) running the service.
   - If using Docker Desktop, use `host.docker.internal` in your DB URL instead of `localhost` or `127.0.0.1` to access a database running on your host machine.
   - Ensure the credentials in the DB URL are correct and have appropriate schema permissions.
@@ -26,14 +27,14 @@ The service enforces strict configuration validation at startup. If it fails to 
 ## 3. API Returns `401 Unauthorized`
 
 - **Issue**: You receive an `HTTP 401 Unauthorized` for all endpoints.
-- **Solution**: Ensure your client application (like the Angular frontend) is injecting the correct `X-API-Key` HTTP header. 
+- **Solution**: Ensure your client application (like the Angular frontend) is injecting the correct `X-API-Key` HTTP header.
   - Compare the key your client is sending with the active keys in your `.env` file (`API_KEYS`).
   - If running behind a reverse proxy, ensure the proxy isn't stripping the `X-API-Key` header.
 
 ## 4. API Returns `429 Too Many Requests`
 
 - **Issue**: You receive an `HTTP 429 Too Many Requests` response.
-- **Solution**: You are hitting the `tower_governor` rate limiter. 
+- **Solution**: You are hitting the `tower_governor` rate limiter.
   - By default, the limit is `10` requests per second per IP. This occurs *before* API key validation to proactively drop malicious traffic.
   - Increase this threshold by setting `RATE_LIMIT_RPS` and `RATE_LIMIT_BURST` to higher values in your `.env` file.
   - Note: If deploying behind a load balancer without proper IP forwarding (`X-Forwarded-For`), the load balancer's IP might trigger the limit for all users. Ensure your load balancer preserves the original client IP.
@@ -41,9 +42,9 @@ The service enforces strict configuration validation at startup. If it fails to 
 ## 5. API Returns `415 Unsupported Media Type`, `422 Unprocessable Entity`, or `400 Bad Request`
 
 - **Issue**: You send a payload and receive an HTTP error status such as `415`, `422`, or `400`.
-- **Solution**: 
+- **Solution**:
   - **HTTP 415**: Ensure you are sending the `Content-Type: application/json; charset=utf-8` header. The payload validator is extremely strict and requires the charset to be explicitly defined.
-  - **HTTP 422**: You are sending extra or unrecognized JSON keys in your payload. All domain models enforce `#[serde(deny_unknown_fields)]` to reject malformed or inflated requests with a structured `VALIDATION_ERROR` code.
+  - **HTTP 422**: You are sending extra or unrecognized JSON keys in your payload, or sending empty/whitespace-only strings. All domain models enforce `#[serde(deny_unknown_fields)]` and reject malformed, inflated, or whitespace-only requests with a structured `VALIDATION_ERROR` code.
   - **HTTP 400**: Verify your JSON syntax is valid and does not exceed the strict **500-item batch limit** for bulk operations.
   - Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
 
@@ -65,7 +66,7 @@ The service enforces strict configuration validation at startup. If it fails to 
 ## 9. Test Coverage Threshold Failures
 
 - **Issue**: `cargo make test-coverage` or the CI pipeline fails with `Error: coverage is below the required threshold`.
-- **Solution**: 
+- **Solution**:
   - We enforce strict code coverage thresholds across the workspace (>99% line and function coverage).
   - The coverage table will print at the bottom of the test run to highlight exactly which files are missing coverage.
   - You must write unit tests (in the respective crate) or integration tests (in `newsfeed-server/tests/integration_test.rs`) to bump the coverage above the thresholds before committing.

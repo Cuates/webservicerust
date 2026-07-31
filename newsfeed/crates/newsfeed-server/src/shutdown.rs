@@ -6,6 +6,14 @@
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[allow(clippy::expect_used)]
 pub async fn shutdown_signal() {
+    let (_tx, rx) = tokio::sync::oneshot::channel();
+    shutdown_signal_with_abort(rx).await;
+}
+
+/// Wait for an OS shutdown signal or an explicit internal abort.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(clippy::expect_used)]
+pub async fn shutdown_signal_with_abort(mut abort_rx: tokio::sync::oneshot::Receiver<()>) {
     use tokio::signal;
 
     let ctrl_c = async {
@@ -42,8 +50,10 @@ pub async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
+        biased;
         () = ctrl_c    => { tracing::info!("Received Ctrl+C, shutting down"); }
         () = terminate => { tracing::info!("Received OS termination signal, shutting down"); }
+        _ = &mut abort_rx => { tracing::info!("Received internal abort signal, shutting down"); }
     }
 }
 
@@ -52,10 +62,15 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_shutdown_signal_installation() {
-        // Poll the future with a 10ms timeout to ensure signal handlers install cleanly without panicking.
-        let res =
-            tokio::time::timeout(std::time::Duration::from_millis(10), shutdown_signal()).await;
-        assert!(res.is_err(), "Expected timeout since no signal was sent");
+    async fn test_shutdown_signal_abort() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(shutdown_signal_with_abort(rx));
+
+        // Trigger the abort immediately
+        tx.send(()).unwrap();
+
+        // Ensure the task resolves deterministically without panicking
+        let res = tokio::time::timeout(std::time::Duration::from_secs(1), task).await;
+        assert!(res.is_ok(), "Expected task to finish after abort");
     }
 }

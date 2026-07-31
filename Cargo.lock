@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-config"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "envy",
  "ipnet",
@@ -1476,14 +1476,14 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-constants"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "newsfeed-db"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "bb8",
  "bb8-tiberius",
@@ -1491,6 +1491,7 @@ dependencies = [
  "newsfeed-config",
  "newsfeed-constants",
  "newsfeed-models",
+ "serde",
  "serde_json",
  "sqlx",
  "testcontainers",
@@ -1504,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-models"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1514,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-server"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "axum",
  "axum-test",
@@ -1548,15 +1549,13 @@ dependencies = [
 
 [[package]]
 name = "newsfeed-service"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
- "axum",
  "bb8",
  "bb8-tiberius",
  "newsfeed-constants",
  "newsfeed-db",
  "newsfeed-models",
- "serde_json",
  "sqlx",
  "thiserror 2.0.18",
  "tiberius",

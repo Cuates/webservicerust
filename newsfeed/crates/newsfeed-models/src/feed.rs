@@ -40,12 +40,18 @@ impl ExtractParams {
     /// Build an `ExtractParams` from a normalised (lowercase-keyed) query-param map.
     #[must_use]
     pub fn from_map(map: &HashMap<String, String>) -> Self {
+        let limit = map
+            .get("limit")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(25)
+            .clamp(1, 100);
+
         Self {
             title: map.get("title").cloned(),
             image_url: map.get("image_url").cloned(),
             feed_url: map.get("feed_url").cloned(),
             actual_url: map.get("actual_url").cloned(),
-            limit: map.get("limit").and_then(|s| s.parse::<u32>().ok()),
+            limit: Some(limit),
             sort: map
                 .get("sort")
                 .and_then(|s| match s.to_lowercase().as_str() {
@@ -59,15 +65,94 @@ impl ExtractParams {
 
 // ── Create / Update / Delete operation parameters ─────────────────────────────
 
+/// Helper function to trim strings and reject empty or whitespace-only strings during deserialization.
+pub fn deserialize_non_empty_option<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Err(serde::de::Error::custom(
+                    "field cannot be empty or whitespace-only",
+                ))
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 /// Parameters passed to the insert/update/delete stored procedure.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CudParams {
+    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
     pub image_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
     pub feed_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
     pub actual_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_option")]
     pub publish_date: Option<String>,
+}
+
+/// Wrapper for CUD request payloads that can be deserialized from either a single JSON object
+/// or a JSON array of objects, normalizing both into a `Vec<CudParams>`.
+#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq, Default)]
+pub struct CudPayload(pub Vec<CudParams>);
+
+impl<'de> serde::Deserialize<'de> for CudPayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Single(CudParams),
+            Batch(Vec<CudParams>),
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::Single(item) => Ok(CudPayload(vec![item])),
+            Helper::Batch(items) => Ok(CudPayload(items)),
+        }
+    }
+}
+
+impl std::ops::Deref for CudPayload {
+    type Target = Vec<CudParams>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for CudPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl IntoIterator for CudPayload {
+    type Item = CudParams;
+    type IntoIter = std::vec::IntoIter<CudParams>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CudPayload {
+    type Item = &'a CudParams;
+    type IntoIter = std::slice::Iter<'a, CudParams>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 // ── Database row types ────────────────────────────────────────────────────────
@@ -125,6 +210,11 @@ mod tests {
         let params4 = ExtractParams::from_map(&map4);
         assert_eq!(params4.sort, None);
 
+        let mut map5 = HashMap::new();
+        map5.insert("sort".to_string(), "unsupported".to_string());
+        let params5 = ExtractParams::from_map(&map5);
+        assert_eq!(params5.sort, None);
+
         let asc_str = SortOrder::Asc.as_str();
         assert_eq!(asc_str, "asc");
         let desc_str = SortOrder::Desc.as_str();
@@ -132,9 +222,28 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_params_limit_clamping() {
+        let mut map = HashMap::new();
+        let p1 = ExtractParams::from_map(&map);
+        assert_eq!(p1.limit, Some(25));
+
+        map.insert("limit".to_string(), "0".to_string());
+        let p2 = ExtractParams::from_map(&map);
+        assert_eq!(p2.limit, Some(1));
+
+        map.insert("limit".to_string(), "500".to_string());
+        let p3 = ExtractParams::from_map(&map);
+        assert_eq!(p3.limit, Some(100));
+
+        map.insert("limit".to_string(), "not_a_number".to_string());
+        let p4 = ExtractParams::from_map(&map);
+        assert_eq!(p4.limit, Some(25));
+    }
+
+    #[test]
     fn test_cud_params_deserialize() {
         let json_data = json!({
-            "title": "New Title",
+            "title": "  New Title  ",
             "publish_date": "2026-07-13"
         });
 
@@ -142,6 +251,19 @@ mod tests {
         assert_eq!(params.title.as_deref(), Some("New Title"));
         assert_eq!(params.publish_date.as_deref(), Some("2026-07-13"));
         assert_eq!(params.image_url, None);
+    }
+
+    #[test]
+    fn test_cud_params_reject_whitespace_only() {
+        let json_data = json!({
+            "title": "   ",
+            "publish_date": "2026-07-13"
+        });
+        let err = serde_json::from_value::<CudParams>(json_data).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("field cannot be empty or whitespace-only")
+        );
     }
 
     #[test]
@@ -175,5 +297,37 @@ mod tests {
         let err = serde_json::from_str::<CudParams>(json_str)
             .expect_err("deserialization must fail when unknown fields are present");
         assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn test_cud_payload_deserialize_single() {
+        let json_str = r#"{"title": "Single Title"}"#;
+        let payload: CudPayload = serde_json::from_str(json_str).unwrap();
+        assert_eq!(payload.len(), 1);
+        assert_eq!(payload[0].title.as_deref(), Some("Single Title"));
+    }
+
+    #[test]
+    fn test_cud_payload_deserialize_batch() {
+        let json_str = r#"[{"title": "Title 1"}, {"title": "Title 2"}]"#;
+        let payload: CudPayload = serde_json::from_str(json_str).unwrap();
+        assert_eq!(payload.len(), 2);
+        assert_eq!(payload[0].title.as_deref(), Some("Title 1"));
+        assert_eq!(payload[1].title.as_deref(), Some("Title 2"));
+    }
+
+    #[test]
+    fn test_cud_payload_coverage() {
+        let json_str = r#"{"title": null, "feed_url": null}"#;
+        let mut payload: CudPayload = serde_json::from_str(json_str).unwrap();
+        assert!(payload[0].title.is_none());
+        assert!(payload[0].feed_url.is_none());
+
+        std::ops::DerefMut::deref_mut(&mut payload)[0].title = Some("Mutated".to_string());
+        assert_eq!(payload[0].title.as_deref(), Some("Mutated"));
+
+        let items: Vec<CudParams> = <CudPayload as IntoIterator>::into_iter(payload).collect();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title.as_deref(), Some("Mutated"));
     }
 }

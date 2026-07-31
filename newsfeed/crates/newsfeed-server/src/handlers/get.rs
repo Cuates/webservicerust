@@ -11,9 +11,10 @@ use axum::{
 use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
 use newsfeed_models::{ApiResponse, ExtractParams};
-use newsfeed_service::{extract_feed, validate_headers};
+use newsfeed_service::extract_feed;
 use std::collections::HashMap;
 
+use crate::validation::validate_headers;
 use std::sync::Arc;
 
 #[utoipa::path(
@@ -63,7 +64,18 @@ pub async fn handler(
                 return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
             }
 
-            (StatusCode::OK, [(ETAG, etag)], body_bytes).into_response()
+            (
+                StatusCode::OK,
+                [
+                    (ETAG, etag.parse().unwrap()),
+                    (
+                        axum::http::header::CONTENT_TYPE,
+                        axum::http::HeaderValue::from_static("application/json"),
+                    ),
+                ],
+                body_bytes,
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!(error = %e, "GET /api/newsfeed database error");

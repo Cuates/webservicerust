@@ -89,8 +89,13 @@ args = [
     "--ignore", "RUSTSEC-2026-0098", 
     "--ignore", "RUSTSEC-2026-0099", 
     "--ignore", "RUSTSEC-2026-0104", 
-    "--ignore", "RUSTSEC-2025-0134"
 ]
+
+[tasks.machete]
+workspace = false
+description = "Check for unused dependencies across the workspace"
+command = "cargo"
+args = ["machete"]
 
 [tasks.check-docker]
 workspace = false

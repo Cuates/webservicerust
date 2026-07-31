@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Knowledge Graph
 
 ```mermaid
@@ -8,9 +9,9 @@ graph TD
     
     %% Request Flow
     Server --> |Rate Limits (ip_extractor + tower_governor) & Validates API Key (SHA-256)| Router
-    Router --> |Deser| Models["newsfeed-models (ExtractParams/CudParams)"]
+    Router --> |Deser & Validate Payload| Models["newsfeed-models (ExtractParams/CudParams)"]
     Router --> Service["newsfeed-service (Business Logic)"]
-    Service --> |Validates Payload (500-item batch limit)| DB[newsfeed-db]
+    Service --> |Orchestrates & Enforces Batch Limits| DB[newsfeed-db]
     
     %% Dependency Arrows (Crate Level)
     Server -.-> Service
@@ -34,8 +35,9 @@ graph TD
 ```
 
 ## Conceptual Mappings
+
 - **Authentication**: `X-API-Key` HTTP Header -> `SHA-256` hash comparison -> `HashSet<String>` in `AppState`.
-- **Resiliency**: IP-based Rate Limiting (powered by `ip_extractor` secure proxy fallback) occurs *before* Auth to proactively drop malicious connections. All batch processing strictly limits arrays to `500` items. Inbound JSON payloads enforce strict schema validation via `#[serde(deny_unknown_fields)]`.
+- **Resiliency**: IP-based Rate Limiting (powered by `ip_extractor` secure proxy fallback) occurs *before* Auth to proactively drop malicious connections. All batch processing strictly limits arrays to `500` items. Inbound JSON payloads enforce strict schema validation via `#[serde(deny_unknown_fields)]` and custom whitespace trimmers (`deserialize_non_empty_option`), with boundaries explicitly checked natively within the HTTP layer (`validation.rs`).
 - **Database Routing**: `DATABASE_TARGET` env var -> Instantiates specific `DbPool` enum variant -> Routes to `postgres.rs`, `mariadb.rs`, or `mssql.rs`.
 - **Legacy Python**: `constants.py` -> `newsfeed-constants`; `newsfeedwebservice.py` -> `newsfeed-service` & `newsfeed-server`.
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> Structured JSON mapped to unified constants (e.g. `Code: "BAD_REQUEST"`).

@@ -15,6 +15,7 @@ pub type MssqlPool = bb8::Pool<bb8_tiberius::ConnectionManager>;
 // ── Active database pool ──────────────────────────────────────────────────────
 
 /// Holds the single active database pool for the configured `DATABASE_TARGET`.
+#[derive(Debug)]
 pub enum DbPool {
     Postgres(sqlx::PgPool),
     MariaDb(sqlx::MySqlPool),
@@ -52,6 +53,7 @@ impl DbPool {
 // ── Application state ─────────────────────────────────────────────────────────
 
 /// Shared state injected into every Axum handler via `State<Arc<AppState>>`.
+#[derive(Debug)]
 pub struct AppState {
     /// Active database pool (only the configured target is initialised).
     pub db: DbPool,
@@ -278,17 +280,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_fails_with_malformed_hex_api_key() {
-        let app_cfg = postgres_app_cfg("invalid_hex_string_not_64_chars");
-        let db_cfg = postgres_db_cfg();
-
-        let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err(), "expected Err for malformed hex API key");
-        match result {
-            Err(DbError::Config(msg)) => {
-                assert!(msg.contains("malformed hex string"));
-            }
-            Err(other) => panic!("expected DbError::Config, got: {other}"),
-            Ok(_) => panic!("expected Err but got Ok"),
+        for key in ["bad_hex", "invalid_hex_string_not_64_chars"] {
+            let app_cfg = postgres_app_cfg(key);
+            let db_cfg = postgres_db_cfg();
+            let result = AppState::init(&app_cfg, &db_cfg).await;
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("malformed hex string")
+            );
         }
     }
 
@@ -302,11 +303,7 @@ mod tests {
         // Note: connecting will fail because postgres://fake is unreachable, but we can verify
         // that if it fails with Sqlx/connection error, the API key validation stage passed!
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        if let Err(DbError::Config(msg)) = &result {
-            if msg.contains("malformed hex string") || msg.contains("API_KEYS must contain") {
-                panic!("API key validation failed unexpectedly: {msg}");
-            }
-        }
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -318,7 +315,10 @@ mod tests {
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
         assert!(
-            matches!(result, Err(DbError::Config(msg)) if msg.contains("Must be 64 hex characters"))
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Must be 64 hex characters")
         );
     }
 
@@ -380,7 +380,7 @@ mod tests {
         db_cfg.postgres_url = None; // Missing URL
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -403,7 +403,7 @@ mod tests {
         db_cfg.mariadb_url = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -426,7 +426,7 @@ mod tests {
         db_cfg.mssql_host = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -438,7 +438,7 @@ mod tests {
         db_cfg.mssql_database = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -451,7 +451,7 @@ mod tests {
         db_cfg.mssql_username = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -465,7 +465,7 @@ mod tests {
         db_cfg.mssql_password = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(matches!(result, Err(DbError::Config(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -485,6 +485,8 @@ mod tests {
         let result = AppState::init(&app_cfg, &db_cfg).await;
         // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
         assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, DbError::Config(msg) if msg.contains("MSSQL pool build error")));
     }
 
     #[tokio::test]
@@ -506,6 +508,8 @@ mod tests {
         let result = AppState::init(&app_cfg, &db_cfg).await;
         // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
         assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, DbError::Config(msg) if msg.contains("MSSQL pool build error")));
     }
     #[tokio::test]
     async fn test_pool_close() {

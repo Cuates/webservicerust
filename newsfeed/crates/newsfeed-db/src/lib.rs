@@ -17,3 +17,4 @@ pub mod shared;
 
 pub use error::DbError;
 pub use pool::{AppState, DbPool};
+pub use shared::{CudResult, CudStatus};

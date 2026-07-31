@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use newsfeed_constants::http::ResponseCode;
+use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use newsfeed_models::ApiResponse;
 
 /// A custom JSON extractor that wraps axum's `Json` extractor.
@@ -27,10 +27,18 @@ where
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
                         ResponseCode::INVALID_HEADER,
                     ),
+                    JsonRejection::JsonDataError(_) => (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        ResponseCode::VALIDATION_ERROR,
+                    ),
                     _ => (StatusCode::BAD_REQUEST, ResponseCode::BAD_REQUEST),
                 };
-                let body_text = rejection.body_text();
-                let payload = ApiResponse::<serde_json::Value>::error_with_code(code, &body_text);
+                let raw_text = rejection.body_text();
+                tracing::warn!(rejection_text = %raw_text, "JSON extraction failed");
+                let payload = ApiResponse::<serde_json::Value>::error_with_code(
+                    code,
+                    ResponseMessage::FAILED_TO_READ_BODY,
+                );
                 Err((status, Json(payload)).into_response())
             }
         }
@@ -85,6 +93,45 @@ mod tests {
                 axum::http::header::HeaderValue::from_static("application/json"),
             )
             .bytes(axum::body::Bytes::from(b"{\"valid\": true}".to_vec()))
+            .await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        assert_eq!(res.text(), "ok");
+    }
+
+    async fn typed_dummy_handler(_body: AppJson<newsfeed_models::CudParams>) -> &'static str {
+        "ok"
+    }
+
+    #[tokio::test]
+    async fn test_app_json_data_error() {
+        let app = Router::new().route("/", post(typed_dummy_handler));
+        let server = TestServer::new(app);
+        let res = server
+            .post("/")
+            .add_header(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::HeaderValue::from_static("application/json"),
+            )
+            .bytes(axum::body::Bytes::from(
+                b"{\"unknown_field\": 123}".to_vec(),
+            ))
+            .await;
+        assert_eq!(res.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body: serde_json::Value = res.json();
+        assert_eq!(body["Code"], "VALIDATION_ERROR");
+    }
+
+    #[tokio::test]
+    async fn test_app_json_typed_valid() {
+        let app = Router::new().route("/", post(typed_dummy_handler));
+        let server = TestServer::new(app);
+        let res = server
+            .post("/")
+            .add_header(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::HeaderValue::from_static("application/json"),
+            )
+            .bytes(axum::body::Bytes::from(b"{\"title\": \"valid\"}".to_vec()))
             .await;
         assert_eq!(res.status_code(), StatusCode::OK);
         assert_eq!(res.text(), "ok");

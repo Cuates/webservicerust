@@ -18,7 +18,7 @@ We will use the `testcontainers` crate to programmatically provision fully isola
 2. **Randomized Ports**: Each container will bind to a random host port, completely eliminating port collisions and allowing parallel test execution across multiple CI runners.
 3. **Automated Teardown**: `testcontainers` utilizes the `Drop` trait to automatically stop and remove the containers once the tests conclude or if a panic occurs, guaranteeing no orphaned processes.
 4. **Active Connection Polling**: To circumvent startup race conditions inherent to container lifecycles (where a database engine logs that it is "ready" before actually opening its TCP socket), tests will employ a dynamic retry loop to repeatedly attempt a connection rather than relying on static timeouts.
-5. **Separation of Concerns**: The manual `docker-compose.test.yml` will remain in the repository *strictly* for developers who wish to connect a GUI client (like DBeaver) for manual inspection, but it is entirely decoupled from the automated test suite.
+5. **Deprecation of Manual Inspection Files**: The manual `docker-compose.test.yml` and `tests/sql/init_*.sql` inspection files have been removed; manual inspection via GUI clients (like DBeaver) is no longer maintained, and all testing is handled programmatically via `testcontainers` or `TEST_*_URL` overrides.
 6. **Live Database Overrides**: While `testcontainers` is the default for automated testing, developers and CI runners can bypass container provisioning and connect directly to existing database instances by setting `TEST_POSTGRES_URL`, `TEST_MARIADB_URL`, or `TEST_MSSQL_URL`/`TEST_MSSQL_PORT`. When these variables are detected, the test runner skips container startup and runs the matrix against the live targets.
 
 ## Consequences

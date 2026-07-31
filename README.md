@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Newsfeed Web Service
 
 [![GitHub Version](https://img.shields.io/github/v/tag/cuates/webservicerust?label=version&sort=semver)](https://github.com/cuates/webservicerust/releases)
@@ -25,16 +26,19 @@ The project is structured as a Cargo workspace with the following crates:
 - **`newsfeed-config`**: Environment variable parsing and type-safe configuration.
 - **`newsfeed-models`**: Shared domain models and HTTP payload/response types.
 - **`newsfeed-db`**: Database access layer abstracting connection pools and SQL engines.
-- **`newsfeed-service`**: Core business logic and request orchestrator.
-- **`newsfeed-server`**: The Axum HTTP server and middleware stack.
+- **`newsfeed-service`**: Core business logic and request orchestrator. Enforces strict bulk batch processing rules.
+- **`newsfeed-server`**: The Axum HTTP server, routing, middleware stack, and strict HTTP payload validation.
 
 ### Rate Limiting Architecture Notice
+
 The IP-based token-bucket rate limiter (`tower_governor`) operates **in-memory per service instance (replica)**. For multi-replica deployments behind a load balancer, clients should be aware that rate limits apply per individual replica unless load balancer session stickiness is enabled or an external distributed rate-limiting layer (e.g., API Gateway, Redis-backed rate limiter) is implemented in front of the cluster.
 
 ### Multi-Database Support & Testing
+
 The service dynamically targets PostgreSQL, MariaDB/MySQL, or MSSQL at runtime based on the `DATABASE_TARGET` environment variable (`postgres`, `mariadb`, or `mssql`).
 
 During integration testing, the suite automatically uses `testcontainers` to spin up ephemeral Docker containers for the target database. You can bypass `testcontainers` and connect directly to a live database instance by setting any of the following environment variable overrides:
+
 - `TEST_POSTGRES_URL="postgres://user:pass@host:5432/db"`
 - `TEST_MARIADB_URL="mysql://user:pass@host:3306/db"`
 - `TEST_MSSQL_URL="sqlserver://host:1433;user=user;password=pass;database=db"` (or `TEST_MSSQL_PORT="1433"`)
@@ -48,7 +52,7 @@ The service and CI pipelines are built to be completely cross-platform across Li
 3. Run `./scripts/generate-api-key.sh` (Linux/macOS) or `./scripts/generate-api-key.ps1` (Windows pwsh) to generate an API access key.
 4. Verify code compilation and run tests across platforms using Cargo Make:
    - `cargo make check` — Verify syntax and compilation.
-   - `cargo machete` — Audit workspace dependency tree for unused crates.
+   - `cargo make machete` — Audit workspace dependency tree for unused crates.
    - `cargo make test` — Run all unit and integration tests across the workspace.
    - `cargo make test-coverage` — Verify >99% line and function test coverage.
 5. Run locally via Docker: `docker compose up --build` to start the application on port `4815`.

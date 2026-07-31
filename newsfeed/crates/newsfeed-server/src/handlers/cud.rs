@@ -11,20 +11,21 @@ use axum::{
 
 use newsfeed_constants::{
     db::OptionMode,
-    http::{PossiblePayloadParams, ResponseCode, ResponseMessage},
+    http::{ResponseCode, ResponseMessage},
 };
-use newsfeed_db::pool::AppState;
-use newsfeed_models::{ApiResponse, CudParams, FailedItem};
-use newsfeed_service::{
-    ServiceError, cud_feed, payload_validator::validate_payload, validate_headers,
-};
+use newsfeed_db::{CudStatus, pool::AppState};
+use newsfeed_models::{ApiResponse, CudPayload, FailedItem};
+use newsfeed_service::{ServiceError, cud_feed};
 
-use crate::extractors::AppJson;
+use crate::{
+    extractors::AppJson,
+    validation::{validate_headers, validate_required_fields},
+};
 
 #[utoipa::path(
     post,
     path = "/api/newsfeed",
-    request_body = CudParams,
+    request_body = CudPayload,
     responses(
         (status = 201, description = "Created newsfeed item", body = ApiResponse<serde_json::Value>)
     )
@@ -32,22 +33,15 @@ use crate::extractors::AppJson;
 pub async fn post_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    AppJson(body): AppJson<serde_json::Value>,
+    AppJson(body): AppJson<CudPayload>,
 ) -> impl IntoResponse {
-    process_cud(
-        state,
-        headers,
-        body,
-        OptionMode::InsertFeed,
-        &[PossiblePayloadParams::TITLE],
-    )
-    .await
+    process_cud(state, headers, body, OptionMode::InsertFeed).await
 }
 
 #[utoipa::path(
     put,
     path = "/api/newsfeed",
-    request_body = CudParams,
+    request_body = CudPayload,
     responses(
         (status = 200, description = "Updated newsfeed item", body = ApiResponse<serde_json::Value>)
     )
@@ -55,25 +49,15 @@ pub async fn post_handler(
 pub async fn put_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    AppJson(body): AppJson<serde_json::Value>,
+    AppJson(body): AppJson<CudPayload>,
 ) -> impl IntoResponse {
-    process_cud(
-        state,
-        headers,
-        body,
-        OptionMode::UpdateFeed,
-        &[
-            PossiblePayloadParams::TITLE,
-            PossiblePayloadParams::PUBLISH_DATE,
-        ],
-    )
-    .await
+    process_cud(state, headers, body, OptionMode::UpdateFeed).await
 }
 
 #[utoipa::path(
     delete,
     path = "/api/newsfeed",
-    request_body = CudParams,
+    request_body = CudPayload,
     responses(
         (status = 200, description = "Deleted newsfeed item", body = ApiResponse<serde_json::Value>)
     )
@@ -81,27 +65,16 @@ pub async fn put_handler(
 pub async fn delete_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    AppJson(body): AppJson<serde_json::Value>,
+    AppJson(body): AppJson<CudPayload>,
 ) -> impl IntoResponse {
-    process_cud(
-        state,
-        headers,
-        body,
-        OptionMode::DeleteFeed,
-        &[
-            PossiblePayloadParams::TITLE,
-            PossiblePayloadParams::PUBLISH_DATE,
-        ],
-    )
-    .await
+    process_cud(state, headers, body, OptionMode::DeleteFeed).await
 }
 
 async fn process_cud(
     state: Arc<AppState>,
     headers: HeaderMap,
-    body: serde_json::Value,
+    body: CudPayload,
     option_mode: OptionMode,
-    required_params: &[&str],
 ) -> axum::response::Response {
     // ── 1. Validate headers ───────────────────────────────────────────────────
     if let Err(e) = validate_headers(&headers, true) {
@@ -119,23 +92,15 @@ async fn process_cud(
             .into_response();
     }
 
-    // ── 2. Validate payload ───────────────────────────────────────────────────
-    let items = match validate_payload(body, required_params) {
-        Ok(items) => items,
-        Err(e) => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(ApiResponse::<serde_json::Value>::error_with_code(
-                    ResponseCode::VALIDATION_ERROR,
-                    e.to_string(),
-                )),
-            )
-                .into_response();
+    // ── 2. Validate required fields for each item ─────────────────────────────
+    for item in &body {
+        if let Err(err_resp) = validate_required_fields(item, &option_mode) {
+            return (StatusCode::UNPROCESSABLE_ENTITY, Json(err_resp)).into_response();
         }
-    };
+    }
 
     // ── 3. Execute bulk insert via single procedure call ──────────────────────
-    let results = match cud_feed(&state, option_mode, &items).await {
+    let results = match cud_feed(&state, option_mode, &body.0).await {
         Ok(res) => res,
         Err(e) => {
             tracing::error!(error = %e, "CUD database error");
@@ -155,18 +120,16 @@ async fn process_cud(
     let mut failed = Vec::new();
 
     for res in results {
-        if res.get("Status").and_then(|v| v.as_str()) == Some("Error") {
-            let reason = res
-                .get("Message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown")
-                .to_string();
-            failed.push(FailedItem {
-                item: res.get("Item").cloned().unwrap_or(serde_json::json!({})),
-                reason,
-            });
-        } else {
-            successes.push(res);
+        match res.status {
+            CudStatus::Error => {
+                failed.push(FailedItem {
+                    item: res.item.unwrap_or(serde_json::json!({})),
+                    reason: res.message,
+                });
+            }
+            CudStatus::Success | CudStatus::Skipped => {
+                successes.push(res);
+            }
         }
     }
 

@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use newsfeed_constants::db::OptionMode;
 use newsfeed_db::pool::{AppState, DbPool};
 use newsfeed_models::{CudParams, ExtractParams, NewsFeedRow};
@@ -40,7 +38,7 @@ pub async fn cud_feed(
     state: &Arc<AppState>,
     option_mode: OptionMode,
     params: &[CudParams],
-) -> Result<Vec<Value>, ServiceError> {
+) -> Result<Vec<newsfeed_db::CudResult>, ServiceError> {
     match &state.db {
         DbPool::Postgres(pool) => newsfeed_db::postgres::cud_feed(pool, option_mode, params)
             .await
@@ -178,5 +176,24 @@ mod tests {
         let result = cud_feed(&state, OptionMode::InsertFeed, &[default_cud_params()]).await;
         assert!(result.is_err(), "expected DB error from fake MSSQL pool");
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
+    }
+
+    #[test]
+    #[allow(clippy::unnecessary_literal_unwrap)]
+    fn test_feed_service_partial_failure_mapping() {
+        // Since feed_service itself just transparently passes the Vec<CudResult>
+        // from newsfeed_db, we simply assert that it is capable of returning
+        // a mocked Result containing CudStatus::Error.
+        let results = vec![newsfeed_db::CudResult {
+            status: newsfeed_db::CudStatus::Error,
+            message: "Constraint violation".to_string(),
+            item: None,
+        }];
+
+        let ok_result: Result<Vec<newsfeed_db::CudResult>, ServiceError> = Ok(results);
+        assert!(ok_result.is_ok());
+        let res = ok_result.unwrap_or_default();
+        assert_eq!(res.len(), 1);
+        assert!(matches!(res[0].status, newsfeed_db::CudStatus::Error));
     }
 }

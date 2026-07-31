@@ -1,3 +1,4 @@
+<!-- markdownlint-disable -->
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -6,6 +7,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [4.1.0] - 2026-07-30
+
+### Added
+- **Validation**: Enforced strict extraction limits (`1`-`100`, default `25`) via `ExtractParams`.
+- **Validation**: Added `deserialize_non_empty_option` to trim and reject whitespace-only strings at the `serde` deserialization boundary.
+- **Testing**: Added comprehensive integration test assertions for cross-engine DB parity and edge cases.
+- **Tooling**: Introduced `cargo make machete` in `Makefile.toml` to automatically audit for unused crate dependencies.
+
+### Changed
+- **Architecture**: Decoupled HTTP-specific payload validation from `newsfeed-service` and moved it entirely to the presentation layer in `newsfeed-server/src/validation.rs`.
+- **Database**: Standardized all three database engines (Postgres, MariaDB, MSSQL) on a unified JSON bulk insertion pattern (`cud_bulk_json_newsfeed`), eliminating per-item loops.
+- **Database**: Changed DB conflict-write operations to return a clear `Skipped` status (`CudStatus`) instead of a generic `Success` when records already exist or titles are unchanged.
+- **Testing**: Replaced deprecated static SQL files (`init_*.sql`) with full dynamic `testcontainers` integration.
+- **Release**: Bumped workspace package version to `4.1.0`.
+
+### Fixed
+- **Testing**: Enhanced the OS signal handler to use injectable abort channels for deterministic, flake-free unit tests.
+- **Database**: Fixed Postgres and MariaDB string concatenation and unique-violation exception blocks to guarantee robust conflict mapping.
 
 ## [4.0.0] - 2026-07-25
 

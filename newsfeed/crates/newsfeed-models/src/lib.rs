@@ -10,5 +10,5 @@
 pub mod feed;
 pub mod response;
 
-pub use feed::{CudParams, ExtractParams, NewsFeedRow, SortOrder};
+pub use feed::{CudParams, CudPayload, ExtractParams, NewsFeedRow, SortOrder};
 pub use response::{ApiResponse, FailedItem};

@@ -3,7 +3,6 @@
 //! Connections are checked out from the pool per query and automatically
 //! returned on drop, eliminating the per-request `TCP` handshake overhead.
 
-use serde_json::Value;
 use tiberius::Query;
 use tracing::instrument;
 
@@ -66,7 +65,7 @@ pub async fn cud_feed(
     pool: &MssqlPool,
     option_mode: OptionMode,
     params: &[CudParams],
-) -> Result<Vec<Value>, DbError> {
+) -> Result<Vec<crate::shared::CudResult>, DbError> {
     let mut conn = pool
         .get()
         .await

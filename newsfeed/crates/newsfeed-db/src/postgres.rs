@@ -42,34 +42,22 @@ pub async fn extract_feed(
 
 // ── Create / Update / Delete ──────────────────────────────────────────────────
 
-/// Call `insertupdatedeletenewsfeed(...)` and return the parsed status JSON.
+/// Call `cud_bulk_json_newsfeed(...)` and return the parsed status JSON.
 #[instrument(skip(pool), level = "debug")]
 pub async fn cud_feed(
     pool: &sqlx::PgPool,
     option_mode: OptionMode,
     params: &[CudParams],
-) -> Result<Vec<serde_json::Value>, DbError> {
-    let mut results = Vec::with_capacity(params.len());
-    let mut tx = pool.begin().await?;
+) -> Result<Vec<crate::shared::CudResult>, DbError> {
+    let payload = serde_json::to_string(params).map_err(DbError::Json)?;
 
-    for param in params {
-        let rows: Vec<(Option<String>,)> =
-            sqlx::query_as("CALL insertupdatedeletenewsfeed($1, $2, $3, $4, $5, $6)")
-                .bind(option_mode.as_str())
-                .bind(param.title.as_deref())
-                .bind(param.image_url.as_deref())
-                .bind(param.feed_url.as_deref())
-                .bind(param.actual_url.as_deref())
-                .bind(param.publish_date.as_deref())
-                .fetch_all(&mut *tx)
-                .await?;
+    let rows: Vec<(Option<String>,)> = sqlx::query_as("CALL cud_bulk_json_newsfeed($1, $2::json)")
+        .bind(option_mode.as_str())
+        .bind(payload)
+        .fetch_all(pool)
+        .await?;
 
-        let mut status_vals = parse_status_rows(rows)?;
-        results.append(&mut status_vals);
-    }
-    tx.commit().await?;
-
-    Ok(results)
+    parse_status_rows(rows)
 }
 
 #[cfg(test)]

@@ -143,9 +143,42 @@ async fn test_postgres_integration() {
     if let Err(e) = &res {
         println!("POSTGRES CUD ERROR: {:?}", e);
     }
-    res.unwrap();
+    let res = res.unwrap();
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].status, newsfeed_db::CudStatus::Success);
 
-    // Test Extract
+    // Test conflict-write returns Skipped
+    let res_dup = postgres::cud_feed(&pool, OptionMode::InsertFeed, &[cud_params.clone()])
+        .await
+        .unwrap();
+    assert_eq!(res_dup.len(), 1);
+    assert_eq!(res_dup[0].status, newsfeed_db::CudStatus::Skipped);
+
+    // Test bulk CUD batch correctness
+    let batch = vec![
+        CudParams {
+            title: Some("Batch Title 1".to_string()),
+            image_url: Some("http://image1.pg".to_string()),
+            feed_url: Some("http://feed1.pg".to_string()),
+            actual_url: Some("http://actual1.pg".to_string()),
+            publish_date: Some("2026-07-14 00:00:00".to_string()),
+        },
+        CudParams {
+            title: Some("Batch Title 2".to_string()),
+            image_url: Some("http://image2.pg".to_string()),
+            feed_url: Some("http://feed2.pg".to_string()),
+            actual_url: Some("http://actual2.pg".to_string()),
+            publish_date: Some("2026-07-15 00:00:00".to_string()),
+        },
+    ];
+    let res_batch = postgres::cud_feed(&pool, OptionMode::InsertFeed, &batch)
+        .await
+        .unwrap();
+    assert_eq!(res_batch.len(), 2);
+    assert_eq!(res_batch[0].status, newsfeed_db::CudStatus::Success);
+    assert_eq!(res_batch[1].status, newsfeed_db::CudStatus::Success);
+
+    // Test Extract (unfiltered)
     let ext_params = ExtractParams {
         title: None,
         image_url: None,
@@ -154,33 +187,51 @@ async fn test_postgres_integration() {
         limit: None,
         sort: None,
     };
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT routine_name FROM information_schema.routines WHERE routine_schema = 'public'",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    println!(
-        "POSTGRES FUNCTIONS: {:?}",
-        rows.iter().map(|r| &r.0).collect::<Vec<_>>()
+    let rows = postgres::extract_feed(&pool, &ext_params).await.unwrap();
+    assert_eq!(rows.len(), 3);
+
+    // Test filter semantics: title filter
+    let ext_title = ExtractParams {
+        title: Some("Batch Title 1".to_string()),
+        image_url: None,
+        feed_url: None,
+        actual_url: None,
+        limit: None,
+        sort: None,
+    };
+    let rows_title = postgres::extract_feed(&pool, &ext_title).await.unwrap();
+    assert_eq!(rows_title.len(), 1);
+    assert_eq!(rows_title[0].titlereturn, Some("Batch Title 1".to_string()));
+
+    // Test filter semantics: limit filter (Asc order)
+    let ext_limit = ExtractParams {
+        title: None,
+        image_url: None,
+        feed_url: None,
+        actual_url: None,
+        limit: Some(2),
+        sort: Some(newsfeed_models::feed::SortOrder::Asc),
+    };
+    let rows_limit = postgres::extract_feed(&pool, &ext_limit).await.unwrap();
+    assert_eq!(rows_limit.len(), 2);
+    assert_eq!(
+        rows_limit[0].titlereturn,
+        Some("Postgres Title".to_string())
     );
 
-    let rows = postgres::extract_feed(&pool, &ext_params).await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].titlereturn, Some("Postgres Title".to_string()));
-
-    let ext_params_sorted = ExtractParams {
+    // Test filter semantics: sort order Desc
+    let ext_desc = ExtractParams {
         title: None,
         image_url: None,
         feed_url: None,
         actual_url: None,
         limit: Some(10),
-        sort: Some(newsfeed_models::feed::SortOrder::Asc),
+        sort: Some(newsfeed_models::feed::SortOrder::Desc),
     };
-    let rows_sorted = postgres::extract_feed(&pool, &ext_params_sorted)
-        .await
-        .unwrap();
-    assert_eq!(rows_sorted.len(), 1);
+    let rows_desc = postgres::extract_feed(&pool, &ext_desc).await.unwrap();
+    assert_eq!(rows_desc.len(), 3);
+    assert_eq!(rows_desc[0].titlereturn, Some("Batch Title 2".to_string()));
+    assert_eq!(rows_desc[2].titlereturn, Some("Postgres Title".to_string()));
 }
 
 #[tokio::test]

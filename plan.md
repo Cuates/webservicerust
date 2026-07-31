@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Project Plan & Status
 
 ## Current Phase: Implementation Complete 🟢
@@ -5,6 +6,7 @@
 The initial rewrite from Python FastAPI to Rust Axum is 100% complete and stable.
 
 ### Completed Milestones
+
 1. **Scaffolding**: Cargo workspace and multi-crate setup initialized.
 2. **Domain Models**: Data types and constants isolated into independent crates.
 3. **Data Layer**: Asynchronous connection pooling via `sqlx` and `tiberius` configured with graceful fallback across Postgres, MariaDB, and MSSQL.
@@ -17,6 +19,8 @@ The initial rewrite from Python FastAPI to Rust Axum is 100% complete and stable
 10. **Test Coverage & Reliability**: Achieved 99.54% test coverage workspace-wide, unified HTTP error handling via `newsfeed-constants`, and integrated `testcontainers` for dynamically provisioning ephemeral databases during automated tests.
 11. **Security & Resiliency**: Enforced global rate limiting (`tower_governor`), strict 500-item payload batch limits, and timing-attack resistant `SHA-256` API key hashing.
 12. **Release 4.0.0 & QA**: Hardened dependency tree (zero unused crates via `cargo machete`), verified end-to-end multi-database HTTP scenarios, and bumped workspace version to `4.0.0`.
+13. **Release 4.1.0 & Architectural Hardening**: Decoupled HTTP payload validation into `validation.rs`, enforced whitespace rejection via `deserialize_non_empty_option`, implemented unified cross-engine bulk JSON insertion (`cud_bulk_json_newsfeed`), mapped DB conflict-writes to `Skipped` status, and bumped workspace version to `4.1.0`.
 
 ### Next Up (Future Planning)
+
 - **Monitoring**: Add Prometheus/OpenTelemetry metrics exporting.

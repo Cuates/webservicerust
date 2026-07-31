@@ -74,6 +74,7 @@ impl ResponseCode {
     pub const BAD_REQUEST: &'static str = "BAD_REQUEST";
     pub const RATE_LIMIT_EXCEEDED: &'static str = "RATE_LIMIT_EXCEEDED";
     pub const UNAUTHORIZED: &'static str = "UNAUTHORIZED";
+    pub const INTERNAL_ERROR: &'static str = "INTERNAL_ERROR";
 }
 
 // ── Standard API response messages ───────────────────────────────────────────
