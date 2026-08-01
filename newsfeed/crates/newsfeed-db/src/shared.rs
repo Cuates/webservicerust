@@ -133,4 +133,33 @@ mod tests {
         assert_eq!(row.actualurlreturn.as_deref(), Some("Url"));
         assert_eq!(row.publishdatereturn.as_deref(), Some("2023-01-01"));
     }
+
+    #[test]
+    fn test_parse_status_rows_skipped() {
+        let rows = vec![(Some(
+            r#"{"Status":"Skipped","Message":"Record already exists"}"#.to_string(),
+        ),)];
+        let res = parse_status_rows(rows).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].status, CudStatus::Skipped);
+        assert_eq!(res[0].message, "Record already exists");
+        assert!(res[0].item.is_none());
+    }
+
+    #[test]
+    fn test_parse_status_rows_with_item() {
+        let rows = vec![(Some(
+            r#"{"Status":"Error","Message":"Invalid date","Item":{"title":"foo","publish_date":"invalid"}}"#.to_string(),
+        ),)];
+        let res = parse_status_rows(rows).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].status, CudStatus::Error);
+        assert_eq!(res[0].message, "Invalid date");
+        let item = res[0].item.as_ref().expect("item should be present");
+        assert_eq!(item.get("title").unwrap().as_str().unwrap(), "foo");
+        assert_eq!(
+            item.get("publish_date").unwrap().as_str().unwrap(),
+            "invalid"
+        );
+    }
 }

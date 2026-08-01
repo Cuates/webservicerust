@@ -3,6 +3,10 @@
 **/*.rs.bk
 lcov.info
 
+# ── Generated artifacts ───────────────────────────────────────────────────────
+# Regenerate with: cargo make gen-openapi
+docs/openapi.json
+
 # ── Environment / secrets ─────────────────────────────────────────────────────
 .env
 # .env.example is committed intentionally

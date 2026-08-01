@@ -50,6 +50,9 @@ pub async fn handler(
     let params = ExtractParams::from_map(&raw_params);
 
     // ── 3. ETag check (Fast Path) ─────────────────────────────────────────────
+    // Derive a stable db-timestamp ETag if max_modified_date is available.
+    // If it fails (e.g. transient pool hiccup), db_etag stays None and we fall
+    // through to the body-hash ETag after executing the query.
     let mut db_etag = None;
     if let Ok(Some(max_date)) = newsfeed_service::feed_service::max_modified_date(&state).await {
         let params_str = serde_json::to_string(&params).unwrap_or_default();
@@ -57,6 +60,7 @@ pub async fn handler(
         let hash = xxhash_rust::xxh64::xxh64(etag_input.as_bytes(), 0);
         let etag = format!("\"{hash:016x}\"");
 
+        // Short-circuit: If-None-Match matches db-timestamp ETag → 304, no body.
         if let Some(if_none_match) = headers.get(IF_NONE_MATCH)
             && if_none_match.as_bytes() == etag.as_bytes()
         {
@@ -77,6 +81,14 @@ pub async fn handler(
                 let hash = xxhash_rust::xxh64::xxh64(&body_bytes, 0);
                 format!("\"{hash:016x}\"")
             };
+
+            // Secondary If-None-Match check: covers the body-hash ETag path when
+            // max_modified_date was unavailable (e.g. transient MariaDB pool error).
+            if let Some(if_none_match) = headers.get(IF_NONE_MATCH)
+                && if_none_match.as_bytes() == etag.as_bytes()
+            {
+                return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
+            }
 
             (
                 StatusCode::OK,

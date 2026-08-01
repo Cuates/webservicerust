@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **ETag Caching**: Resolved a CI flake where `GET /api/v1/newsfeed` returned `200` instead of `304 Not Modified` under MariaDB when `max_modified_date` suffered a transient pool error. The `If-None-Match` comparison now also fires on the body-hash ETag fallback path, making cache validation resilient to intermittent DB connection hiccups on all three engines.
+
 ## [4.2.0] - 2026-07-31
 
 ### Added

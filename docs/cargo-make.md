@@ -28,6 +28,8 @@ These targets wrap the standard Cargo commands to act across the entire workspac
 | **`cargo make info`** | Prints out a highly formatted summary of the active Rust toolchain, operating system, and all workspace crates. | `duckscript` (custom) |
 | **`cargo make check`** | Quickly checks all workspace crates for compilation errors. | `cargo check --workspace` |
 | **`cargo make check-deadcode`** | Runs clippy specifically to deny any dead code across the workspace. | `cargo clippy --workspace -- -D dead_code` |
+| **`cargo make lint-docs`** | Lints all project Markdown files for style and formatting issues. Requires Node.js / `npx`. | `npx markdownlint-cli <all .md files>` |
+| **`cargo make gen-openapi`** | Generates `docs/openapi.json` from the live `utoipa` spec without a running server. Output is safe to commit and import directly into Postman. | `cargo run --bin gen_openapi` |
 | **`cargo make clean`** | Removes the `target/` directory and build artifacts. | `cargo clean` |
 | **`cargo make fix`** | Formats code and automatically applies clippy fixes. | `cargo fmt --all && cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings` |
 | **`cargo make audit`** | Scans dependency tree for security vulnerabilities. Explicitly ignores upstream `tiberius` constraints in CI. | `cargo audit` |

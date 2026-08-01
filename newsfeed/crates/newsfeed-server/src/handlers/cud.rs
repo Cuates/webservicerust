@@ -197,4 +197,30 @@ mod tests {
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
         assert_eq!(res.status(), axum::http::StatusCode::BAD_REQUEST);
     }
+
+    #[test]
+    fn test_handle_cud_logic_all_skipped_insert() {
+        let results = vec![CudResult {
+            status: CudStatus::Skipped,
+            message: "Record already exists".to_string(),
+            item: Some(serde_json::json!({"title": "1"})),
+        }];
+
+        let res = handle_cud_logic(results, OptionMode::InsertFeed);
+        // Insert with no errors and all skipped should be CREATED (201)
+        assert_eq!(res.status(), axum::http::StatusCode::CREATED);
+    }
+
+    #[test]
+    fn test_handle_cud_logic_all_skipped_update() {
+        let results = vec![CudResult {
+            status: CudStatus::Skipped,
+            message: "Record does not exist".to_string(),
+            item: Some(serde_json::json!({"title": "1"})),
+        }];
+
+        let res = handle_cud_logic(results, OptionMode::UpdateFeed);
+        // Update with no errors and all skipped should be OK (200)
+        assert_eq!(res.status(), axum::http::StatusCode::OK);
+    }
 }

@@ -35,6 +35,20 @@ description = "Run cargo clippy to deny dead code across all crates"
 command = "cargo"
 args = ["clippy", "--workspace", "--", "-D", "dead_code"]
 
+[tasks.lint-docs]
+workspace = false
+description = "Lint all project Markdown files via markdownlint-cli (requires Node.js / npx)"
+script_runner = "@shell"
+script = '''
+npx --yes markdownlint-cli README.md CHANGELOG.md AGENTS.md SKILL.md START_HERE.md plan.md KNOWLEDGE_GRAPH.md docs/architecture.md docs/cargo-make.md docs/distribution.md docs/scaffolding.md docs/troubleshooting.md newsfeed/crates/newsfeed-config/README.md newsfeed/crates/newsfeed-constants/README.md newsfeed/crates/newsfeed-db/README.md newsfeed/crates/newsfeed-models/README.md newsfeed/crates/newsfeed-server/README.md newsfeed/crates/newsfeed-service/README.md
+'''
+
+[tasks.gen-openapi]
+workspace = false
+description = "Generate docs/openapi.json from the live utoipa spec (no server required). Safe to commit and import into Postman."
+command = "cargo"
+args = ["run", "--bin", "gen_openapi"]
+
 [tasks.clean]
 workspace = false
 description = "Run cargo clean build artifacts"
@@ -131,11 +145,11 @@ run_task = { name = ["check-docker", "test-coverage-run", "test-coverage-report"
 
 [tasks.test-coverage-run]
 command = "cargo"
-args = ["llvm-cov", "--workspace", "--all-features", "--ignore-filename-regex", ".*main\\.rs", "--fail-under-lines", "99", "--fail-under-functions", "99", "--", "--include-ignored"]
+args = ["llvm-cov", "--workspace", "--all-features", "--ignore-filename-regex", ".*(main|gen_openapi)\\.rs", "--fail-under-lines", "99", "--fail-under-functions", "99", "--", "--include-ignored"]
 
 [tasks.test-coverage-report]
 command = "cargo"
-args = ["llvm-cov", "report", "--lcov", "--ignore-filename-regex", ".*main\\.rs", "--output-path", "lcov.info"]
+args = ["llvm-cov", "report", "--lcov", "--ignore-filename-regex", ".*(main|gen_openapi)\\.rs", "--output-path", "lcov.info"]
 
 [tasks.docker-build]
 workspace = false

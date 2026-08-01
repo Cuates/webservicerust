@@ -459,4 +459,44 @@ mod tests {
         let err = serde_json::from_str::<CudPayload>(&json_str).expect_err("should fail");
         assert!(err.to_string().contains("exceeds maximum size"));
     }
+
+    // ── deserialize_url: https + length cap ──────────────────────────────────
+
+    #[test]
+    fn test_deserialize_url_accepts_https() {
+        let json_str = r#"{"feed_url": "https://example.com/feed"}"#;
+        let params: CudParams = serde_json::from_str(json_str).unwrap();
+        assert_eq!(params.feed_url.as_deref(), Some("https://example.com/feed"));
+    }
+
+    #[test]
+    fn test_deserialize_url_rejects_no_scheme() {
+        let json_str = r#"{"feed_url": "example.com/feed"}"#;
+        let err = serde_json::from_str::<CudParams>(json_str).expect_err("should fail");
+        assert!(err.to_string().contains("URL must start with http://"));
+    }
+
+    #[test]
+    fn test_deserialize_url_rejects_over_2048_chars() {
+        let long_url = format!("https://example.com/{}", "a".repeat(2048));
+        let json_str = format!(r#"{{"feed_url": "{}"}}"#, long_url);
+        let err = serde_json::from_str::<CudParams>(&json_str).expect_err("should fail");
+        assert!(err.to_string().contains("field exceeds maximum length"));
+    }
+
+    // ── &CudPayload ref-iteration ─────────────────────────────────────────────
+
+    #[test]
+    fn test_cud_payload_ref_iteration() {
+        let json_str = r#"[{"title": "A"}, {"title": "B"}]"#;
+        let payload: CudPayload = serde_json::from_str(json_str).unwrap();
+        // Exercise `impl IntoIterator for &'a CudPayload`
+        let titles: Vec<&str> = (&payload)
+            .into_iter()
+            .filter_map(|p| p.title.as_deref())
+            .collect();
+        assert_eq!(titles, vec!["A", "B"]);
+        // Confirm the payload is still usable after the borrow
+        assert_eq!(payload.len(), 2);
+    }
 }

@@ -1711,3 +1711,258 @@ async fn test_cud_timeout_408() {
         axum::http::StatusCode::REQUEST_TIMEOUT
     );
 }
+
+#[tokio::test]
+async fn test_etag_body_hash_304_regression() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+    let api_key = "nf_test_key_123";
+
+    // 1. Initial GET on empty table
+    let response1 = server
+        .get("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .await;
+
+    assert_eq!(response1.status_code(), StatusCode::OK);
+    let etag = response1.header(&axum::http::header::ETAG);
+    let etag_val = etag.to_str().unwrap().to_owned();
+
+    // 2. Second GET with If-None-Match
+    let response2 = server
+        .get("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(api_key),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .add_header(
+            axum::http::header::IF_NONE_MATCH,
+            axum::http::header::HeaderValue::from_str(&etag_val).unwrap(),
+        )
+        .await;
+
+    assert_eq!(response2.status_code(), StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn test_delete_missing_title() {
+    let server = create_test_server();
+    let response = server
+        .delete("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "publish_date": "2026-07-23"
+            }]))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn test_put_missing_publish_date() {
+    let server = create_test_server();
+    let response = server
+        .put("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!([{
+                "title": "Missing publish date"
+            }]))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["Code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn test_post_wrapper_payload() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+    let cfg = AppConfig {
+        trust_proxy: false,
+        trusted_proxy_cidr: None,
+        bind_host: "127.0.0.1".to_string(),
+        app_port: 4815,
+        rust_log: "info".to_string(),
+        api_keys: "nf_test_key_123".to_string(),
+        allowed_origins: "http://localhost".to_string(),
+        rate_limit_rps: 100,
+        rate_limit_burst: 100,
+        timeout_standard_secs: 10,
+        timeout_cud_secs: 60,
+    };
+    let app = router::build(state, &cfg).layer(axum::middleware::from_fn(
+        |mut req: axum::http::Request<axum::body::Body>, next: axum::middleware::Next| async move {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    8080,
+                ))));
+            next.run(req).await
+        },
+    ));
+    let server = TestServer::new(app);
+
+    let response = server
+        .post("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&serde_json::json!({
+                "items": [{
+                    "title": "Wrapper format title",
+                    "feed_url": "http://example.com/wrapper",
+                    "publish_date": "2026-07-26 00:00:00"
+                }],
+                "idempotency_key": "k"
+            }))
+            .unwrap(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn test_post_over_1000_items() {
+    let server = create_test_server();
+
+    let mut items = Vec::new();
+    for i in 0..1001 {
+        items.push(serde_json::json!({
+            "title": format!("Title {}", i),
+            "feed_url": format!("http://example.com/{}", i),
+            "publish_date": "2026-07-26 00:00:00"
+        }));
+    }
+
+    let response = server
+        .post("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static("nf_test_key_123"),
+        )
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(serde_json::to_vec(&items).unwrap()))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn test_health_ready_healthy() {
+    let server = create_test_server();
+
+    let response = server.get("/health/ready").await;
+
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["status"], "ok");
+}
+
+#[tokio::test]
+async fn test_options_preflight() {
+    let server = create_test_server();
+
+    let response = server
+        .method(axum::http::Method::OPTIONS, "/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::ORIGIN,
+            axum::http::header::HeaderValue::from_static("http://localhost"),
+        )
+        .add_header(
+            axum::http::header::ACCESS_CONTROL_REQUEST_METHOD,
+            axum::http::header::HeaderValue::from_static("POST"),
+        )
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let allow_methods = response.header(&axum::http::header::ACCESS_CONTROL_ALLOW_METHODS);
+    assert!(allow_methods.to_str().unwrap().contains("POST"));
+
+    let allow_origin = response.header(&axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN);
+    assert_eq!(allow_origin.to_str().unwrap(), "http://localhost");
+}

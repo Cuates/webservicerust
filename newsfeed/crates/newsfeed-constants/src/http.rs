@@ -113,8 +113,99 @@ impl PossiblePayloadParams {
 mod tests {
     use super::*;
 
+    // ── ResponseCode ─────────────────────────────────────────────────────────
+
     #[test]
-    fn test_response_message_partial_constant() {
+    fn test_response_code_constants() {
+        assert_eq!(ResponseCode::INVALID_HEADER, "INVALID_HEADER");
+        assert_eq!(ResponseCode::VALIDATION_ERROR, "VALIDATION_ERROR");
+        assert_eq!(ResponseCode::DB_ERROR, "DB_ERROR");
+        assert_eq!(ResponseCode::BAD_REQUEST, "BAD_REQUEST");
+        assert_eq!(ResponseCode::RATE_LIMIT_EXCEEDED, "RATE_LIMIT_EXCEEDED");
+        assert_eq!(ResponseCode::UNAUTHORIZED, "UNAUTHORIZED");
+        assert_eq!(ResponseCode::INTERNAL_ERROR, "INTERNAL_ERROR");
+    }
+
+    // ── ResponseMessage ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_response_message_constants() {
         assert_eq!(ResponseMessage::PARTIAL, "Partial");
+        assert_eq!(ResponseMessage::PAYLOAD_ISSUE, "Issue with payload check");
+        assert_eq!(ResponseMessage::PROCESSED, "Processed request");
+        assert_eq!(ResponseMessage::NOT_FOUND, "Not Found");
+        assert_eq!(ResponseMessage::UNAUTHORIZED, "Unauthorized");
+        assert_eq!(ResponseMessage::TOO_MANY_REQUESTS, "Too Many Requests");
+        assert_eq!(ResponseMessage::METHOD_NOT_ALLOWED, "Method Not Allowed");
+        assert_eq!(
+            ResponseMessage::FAILED_TO_READ_BODY,
+            "Failed to read request body"
+        );
+        assert_eq!(
+            ResponseMessage::TOO_MANY_REQUESTS_RETRY,
+            "Too many requests. Please wait and try again."
+        );
+    }
+
+    // ── ResponseStatus ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_response_status_constants() {
+        assert_eq!(ResponseStatus::SUCCESS, "Success");
+        assert_eq!(ResponseStatus::ERROR, "Error");
+    }
+
+    // ── ResponseKeys ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_response_keys_constants() {
+        assert_eq!(ResponseKeys::STATUS, "Status");
+        assert_eq!(ResponseKeys::MESSAGE, "Message");
+        assert_eq!(ResponseKeys::COUNT, "Count");
+        assert_eq!(ResponseKeys::RESULT, "Result");
+        assert_eq!(ResponseKeys::SERVER_ERROR, "SError");
+        assert_eq!(ResponseKeys::SERVER_MESSAGE, "SMessage");
+    }
+
+    // ── HeaderType / PossibleHeaderType ──────────────────────────────────────
+
+    #[test]
+    fn test_header_type_constants() {
+        assert_eq!(HeaderType::CONTENT_TYPE, "content-type");
+        assert_eq!(HeaderType::ACCEPT, "accept");
+        assert_eq!(HeaderType::AUTHORIZATION, "authorization");
+        assert_eq!(HeaderType::API_KEY, "x-api-key");
+    }
+
+    #[test]
+    fn test_possible_header_type_constants() {
+        assert_eq!(PossibleHeaderType::CONTENT_TYPE, "application/json");
+        assert_eq!(PossibleHeaderType::ACCEPT, "application/json");
+        assert_eq!(PossibleHeaderType::CHARSET, "utf-8");
+    }
+
+    // ── MethodType ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_method_type_constants() {
+        assert_eq!(MethodType::GET, "GET");
+        assert_eq!(MethodType::POST, "POST");
+        assert_eq!(MethodType::PUT, "PUT");
+        assert_eq!(MethodType::DELETE, "DELETE");
+        assert_eq!(MethodType::OPTIONS, "OPTIONS");
+        assert_eq!(MethodType::QUERY, "QUERY");
+    }
+
+    // ── PossiblePayloadParams ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_possible_payload_params_constants() {
+        assert_eq!(PossiblePayloadParams::TITLE, "title");
+        assert_eq!(PossiblePayloadParams::IMAGE_URL, "image_url");
+        assert_eq!(PossiblePayloadParams::FEED_URL, "feed_url");
+        assert_eq!(PossiblePayloadParams::ACTUAL_URL, "actual_url");
+        assert_eq!(PossiblePayloadParams::PUBLISH_DATE, "publish_date");
+        assert_eq!(PossiblePayloadParams::LIMIT, "limit");
+        assert_eq!(PossiblePayloadParams::SORT, "sort");
     }
 }
