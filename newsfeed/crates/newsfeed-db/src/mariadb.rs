@@ -74,8 +74,11 @@ pub async fn cud_feed(
 pub async fn max_modified_date(
     pool: &sqlx::MySqlPool,
 ) -> Result<Option<String>, crate::error::DbError> {
+    // Note: MariaDB on Linux (such as GitHub Actions CI) is case-sensitive by default.
+    // We must query 'newsfeed' strictly in lowercase as defined in the migrations to
+    // prevent "Table doesn't exist" errors which bypass fallback logic in handlers.
     let row: (Option<String>,) =
-        sqlx::query_as("SELECT CAST(MAX(modified_date) AS CHAR) FROM NewsFeed")
+        sqlx::query_as("SELECT CAST(MAX(modified_date) AS CHAR) FROM newsfeed")
             .fetch_one(pool)
             .await?;
     Ok(row.0)

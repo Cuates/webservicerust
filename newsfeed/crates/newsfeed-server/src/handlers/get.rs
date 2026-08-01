@@ -51,8 +51,8 @@ pub async fn handler(
 
     // ── 3. ETag check (Fast Path) ─────────────────────────────────────────────
     // Derive a stable db-timestamp ETag if max_modified_date is available.
-    // If it fails (e.g. transient pool hiccup), db_etag stays None and we fall
-    // through to the body-hash ETag after executing the query.
+    // If it fails (e.g. transient pool hiccup) or returns "NULL", db_etag stays None
+    // and we fall through to the body-hash ETag after executing the query.
     let mut db_etag = None;
     if let Ok(Some(max_date)) = newsfeed_service::feed_service::max_modified_date(&state).await {
         let params_str = serde_json::to_string(&params).unwrap_or_default();
