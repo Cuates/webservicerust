@@ -42,6 +42,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         tzdata \
         ca-certificates \
+        curl \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
@@ -55,6 +56,9 @@ COPY --from=builder /build/target/release/newsfeed-server ./newsfeed-server
 RUN chmod +x ./newsfeed-server
 
 EXPOSE 4815
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:4815/health/live || exit 1
 
 # Run as a non-root user for security
 RUN useradd -r -s /bin/false newsfeed

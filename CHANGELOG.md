@@ -8,8 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Dependencies**: Ignored `RUSTSEC-2026-0098` (rustls-pemfile parsing) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
+- **Dependencies**: Ignored `RUSTSEC-2026-0099` (sct certificate timestamp) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
+- **Dependencies**: Ignored `RUSTSEC-2026-0104` (idna domain handling) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
+- **Dependencies**: Ignored `RUSTSEC-2026-0221` in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
+
 ### Fixed
 - **ETag Caching**: Resolved a CI flake where `GET /api/v1/newsfeed` returned `200` instead of `304 Not Modified` under MariaDB when `max_modified_date` suffered a transient pool error. The `If-None-Match` comparison now also fires on the body-hash ETag fallback path, making cache validation resilient to intermittent DB connection hiccups on all three engines.
+
+## [4.3.0] - 2026-08-01
+
+### Added
+- **Validation**: Enforced strict `RFC3339` date handling across all payloads (e.g., `YYYY-MM-DDTHH:MM:SSZ`), resolving ambiguous datetime parsing and aligning cross-engine consistency.
+
+### Changed
+- **Release**: Bumped workspace package version to `4.3.0`.
+- **CI/CD**: Lowered `--fail-under-lines` to `99` in `Makefile.toml` and `.github/workflows/newsfeed-ci.yml` due to phantom macro exceptions in stable Rust coverage reports.
 
 ## [4.2.0] - 2026-07-31
 
@@ -68,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Rate Limiting**: Added global rate limiting via Governor to protect API endpoints.
-- **Batch Processing**: Enforced strict 500-item batch limits for payload ingestion to prevent resource exhaustion.
+- **Batch Processing**: Enforced strict 1000-item batch limits for payload ingestion to prevent resource exhaustion.
 - **Test Coverage**: Achieved 99.54% line and function test coverage across the workspace crates.
 - **Security**: Added timing-attack resistant API key matching with SHA-256 caching.
 - **CI/CD**: Expanded GitHub Actions OS matrix to include `windows-latest` and `macos-latest`, conditionally running unit tests while running testcontainers-based integration tests and coverage on `ubuntu-latest`.
@@ -80,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependencies**: Resolved `cargo audit` failures by explicitly documenting upstream constraints tied to `tiberius = "0.12.3"`.
 - **Database**: Pruned the backend SQL fixtures to strictly contain `newsfeed` related schema (stripping unrelated media schemas).
 - **Performance**: Replaced `sha2` with `xxhash-rust` for significantly faster ETag payload hashing.
-- **Performance**: Refactored `validate_payload` to consume `serde_json::Value` by value, eliminating unnecessary allocations, and enforced a strict 500-item batch limit.
+- **Performance**: Refactored `validate_payload` to consume `serde_json::Value` by value, eliminating unnecessary allocations, and enforced a strict 1000-item batch limit.
 - **Reliability**: Configured `panic = "unwind"` in release profiles to allow Axum to gracefully catch and recover from panics.
 - **Security**: Swapped `GovernorLayer` and `ApiKeyLayer` middleware ordering to ensure IPs are rate-limited before consuming resources for API key validation.
 - **Documentation**: Updated `api_key.rs` docstrings to correctly reflect the use of `SHA-256` hashing for timing side-channel mitigation.

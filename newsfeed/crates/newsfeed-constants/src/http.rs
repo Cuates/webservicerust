@@ -62,6 +62,7 @@ pub struct ResponseStatus;
 impl ResponseStatus {
     pub const SUCCESS: &'static str = "Success";
     pub const ERROR: &'static str = "Error";
+    pub const PARTIAL: &'static str = "Partial";
 }
 
 // ── Standard API response error codes ─────────────────────────────────────────
@@ -153,6 +154,7 @@ mod tests {
     fn test_response_status_constants() {
         assert_eq!(ResponseStatus::SUCCESS, "Success");
         assert_eq!(ResponseStatus::ERROR, "Error");
+        assert_eq!(ResponseStatus::PARTIAL, "Partial");
     }
 
     // ── ResponseKeys ─────────────────────────────────────────────────────────

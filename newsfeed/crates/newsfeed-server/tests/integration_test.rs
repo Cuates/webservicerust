@@ -876,7 +876,7 @@ async fn test_db_crud_lifecycle() {
                 "image_url": "http://example.com/image.png",
                 "feed_url": "http://example.com/feed",
                 "actual_url": "http://example.com/actual",
-                "publish_date": "2026-07-13 00:00:00"
+                "publish_date": "2026-07-13T00:00:00Z"
             }))
             .unwrap(),
         ))
@@ -955,7 +955,7 @@ async fn test_db_crud_lifecycle() {
                 "image_url": "http://example.com/image-updated.png",
                 "feed_url": "http://example.com/feed",
                 "actual_url": "http://example.com/actual",
-                "publish_date": "2026-07-14 00:00:00"
+                "publish_date": "2026-07-14T00:00:00Z"
             }))
             .unwrap(),
         ))
@@ -1009,7 +1009,7 @@ async fn test_db_crud_lifecycle() {
         .bytes(axum::body::Bytes::from(
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Integration Test Title",
-                "publish_date": "2026-07-14 00:00:00"
+                "publish_date": "2026-07-14T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1126,7 +1126,7 @@ async fn test_post_db_error() {
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Valid title, but DB will fail",
                 "feed_url": "http://example.com",
-                "publish_date": "2026-07-26"
+                "publish_date": "2026-07-26T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1180,7 +1180,7 @@ async fn test_put_db_error() {
         )
         .bytes(axum::body::Bytes::from(
             serde_json::to_vec(&serde_json::json!([{
-                "title": "Update", "publish_date": "2026-07-23"
+                "title": "Update", "publish_date": "2026-07-23T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1212,7 +1212,7 @@ async fn test_delete_db_error() {
         )
         .bytes(axum::body::Bytes::from(
             serde_json::to_vec(&serde_json::json!([{
-                "title": "Delete", "publish_date": "2026-07-23"
+                "title": "Delete", "publish_date": "2026-07-23T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1293,12 +1293,12 @@ async fn test_db_partial_failure() {
                 {
                     "title": "Duplicate Title",
                     "feed_url": "http://example.com/feed1",
-                    "publish_date": "2026-07-23 00:00:00"
+                    "publish_date": "2026-07-23T00:00:00Z"
                 },
                 {
                     "title": "Duplicate Title",
                     "feed_url": "http://example.com/feed2",
-                    "publish_date": "2026-07-23 01:00:00"
+                    "publish_date": "2026-07-23T01:00:00Z"
                 }
             ]))
             .unwrap(),
@@ -1366,12 +1366,12 @@ async fn test_db_true_partial_success() {
             serde_json::to_vec(&serde_json::json!([
                 {
                     "title": "Feed One (Invalid)",
-                    "publish_date": "2026-07-23 00:00:00"
+                    "publish_date": "2026-07-23T00:00:00Z"
                 },
                 {
                     "title": "Feed Two (Valid)",
                     "feed_url": "http://example.com/feed2",
-                    "publish_date": "2026-07-23 01:00:00"
+                    "publish_date": "2026-07-23T01:00:00Z"
                 }
             ]))
             .unwrap(),
@@ -1518,12 +1518,12 @@ async fn test_cud_endpoint_partial_batch_failure_response() {
             serde_json::to_vec(&serde_json::json!([
                 {
                     "title": "TC8 Invalid Item",
-                    "publish_date": "2026-07-23 00:00:00"
+                    "publish_date": "2026-07-23T00:00:00Z"
                 },
                 {
                     "title": "TC8 Valid Item",
                     "feed_url": "http://example.com/tc8",
-                    "publish_date": "2026-07-23 01:00:00"
+                    "publish_date": "2026-07-23T01:00:00Z"
                 }
             ]))
             .unwrap(),
@@ -1597,7 +1597,7 @@ async fn test_db_conflict_skipped() {
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Conflict Test Title",
                 "feed_url": "http://example.com/feed",
-                "publish_date": "2026-07-24 00:00:00"
+                "publish_date": "2026-07-24T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1617,14 +1617,14 @@ async fn test_db_conflict_skipped() {
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Conflict Test Title",
                 "feed_url": "http://example.com/feed",
-                "publish_date": "2026-07-24 00:00:00"
+                "publish_date": "2026-07-24T00:00:00Z"
             }]))
             .unwrap(),
         ))
         .await;
 
-    // Should be CREATED because our implementation treats full success and skipped items similarly at top level unless we have errors
-    assert_eq!(post_resp2.status_code(), StatusCode::CREATED);
+    // Should be OK because our implementation treats all-skipped batches as 200 OK
+    assert_eq!(post_resp2.status_code(), StatusCode::OK);
     let body: serde_json::Value = post_resp2.json();
     assert_eq!(body["Status"], "Success");
 
@@ -1700,7 +1700,7 @@ async fn test_cud_timeout_408() {
             serde_json::to_vec(&serde_json::json!([{
                 "title": "Valid title, but will timeout",
                 "feed_url": "http://example.com",
-                "publish_date": "2026-07-26"
+                "publish_date": "2026-07-26T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1798,7 +1798,7 @@ async fn test_delete_missing_title() {
         )
         .bytes(axum::body::Bytes::from(
             serde_json::to_vec(&serde_json::json!([{
-                "publish_date": "2026-07-23"
+                "publish_date": "2026-07-23T00:00:00Z"
             }]))
             .unwrap(),
         ))
@@ -1887,7 +1887,7 @@ async fn test_post_wrapper_payload() {
                 "items": [{
                     "title": "Wrapper format title",
                     "feed_url": "http://example.com/wrapper",
-                    "publish_date": "2026-07-26 00:00:00"
+                    "publish_date": "2026-07-26T00:00:00Z"
                 }],
                 "idempotency_key": "k"
             }))
@@ -1895,7 +1895,7 @@ async fn test_post_wrapper_payload() {
         ))
         .await;
 
-    assert_eq!(response.status_code(), StatusCode::CREATED);
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -1907,7 +1907,7 @@ async fn test_post_over_1000_items() {
         items.push(serde_json::json!({
             "title": format!("Title {}", i),
             "feed_url": format!("http://example.com/{}", i),
-            "publish_date": "2026-07-26 00:00:00"
+            "publish_date": "2026-07-26T00:00:00Z"
         }));
     }
 

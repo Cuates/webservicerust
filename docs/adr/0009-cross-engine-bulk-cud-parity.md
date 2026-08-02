@@ -9,7 +9,7 @@ Accepted
 
 ## Context
 
-Our application natively supports PostgreSQL, MariaDB, and MSSQL. Initially, MSSQL utilized a highly efficient `cud_bulk_json_newsfeed` stored procedure that allowed the Rust layer to serialize up to 500 records into a single JSON string and execute the batch within one transaction. However, Postgres and MariaDB were iterating over the items natively in Rust, executing `N` individual SQL statements per batch.
+Our application natively supports PostgreSQL, MariaDB, and MSSQL. Initially, MSSQL utilized a highly efficient `cud_bulk_json_newsfeed` stored procedure that allowed the Rust layer to serialize up to 1000 records into a single JSON string and execute the batch within one transaction. However, Postgres and MariaDB were iterating over the items natively in Rust, executing `N` individual SQL statements per batch.
 
 ## Decision
 

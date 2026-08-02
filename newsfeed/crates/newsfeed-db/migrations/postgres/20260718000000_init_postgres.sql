@@ -697,7 +697,7 @@ ALTER TABLE ONLY public.newsfeed
 -- Name: cud_bulk_json_newsfeed; Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.cud_bulk_json_newsfeed(
+CREATE OR REPLACE PROCEDURE public.cud_bulk_json_newsfeed(
     IN optionmode text,
     IN payload json,
     INOUT status text DEFAULT NULL::text
@@ -714,7 +714,7 @@ BEGIN
                 NULLIF(trim(item->>'image_url'), '') AS imageurl,
                 item->>'feed_url' AS feedurl,
                 NULLIF(trim(item->>'actual_url'), '') AS actualurl,
-                to_timestamp(item->>'publish_date', 'YYYY-MM-DD HH24:MI:SS.US') AS publish_date,
+                CAST(item->>'publish_date' AS timestamp) AS publish_date,
                 item
             FROM json_array_elements(payload) AS item
         ), inserted AS (
@@ -740,7 +740,7 @@ BEGIN
                 NULLIF(trim(item->>'image_url'), '') AS imageurl,
                 item->>'feed_url' AS feedurl,
                 NULLIF(trim(item->>'actual_url'), '') AS actualurl,
-                to_timestamp(item->>'publish_date', 'YYYY-MM-DD HH24:MI:SS.US') AS publish_date,
+                CAST(item->>'publish_date' AS timestamp) AS publish_date,
                 item
             FROM json_array_elements(payload) AS item
         ), updated AS (

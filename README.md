@@ -16,7 +16,7 @@ A high-performance, strongly-typed Newsfeed API written in Rust. This project re
 
 ## Overview
 
-The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides timing-attack resistant `SHA-256` API key authentication, IP-based token-bucket rate limiting, highly optimized database connection pooling (including tuned `bb8` pools), strict 500-item batch processing limits, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds (currently verified at >99%).
+The Newsfeed web service handles CRUD operations for user newsfeeds, supporting multiple database backends dynamically at runtime (PostgreSQL, MariaDB, and MSSQL). It provides timing-attack resistant `SHA-256` API key authentication, IP-based token-bucket rate limiting, highly optimized database connection pooling (including tuned `bb8` pools), strict 1000-item batch processing limits, and interactive OpenAPI (Swagger) documentation. It guarantees stability through strict CI/CD code coverage thresholds (currently verified at >99%).
 
 ## Architecture & Key Features
 
@@ -27,7 +27,7 @@ The project is structured as a Cargo workspace with the following crates:
 - **`newsfeed-models`**: Shared domain models and HTTP payload/response types.
 - **`newsfeed-db`**: Database access layer abstracting connection pools and SQL engines.
 - **`newsfeed-service`**: Core business logic and request orchestrator. Enforces strict bulk batch processing rules.
-- **`newsfeed-server`**: The Axum HTTP server, routing, middleware stack, and strict HTTP payload validation.
+- **`newsfeed-server`**: The Axum HTTP server, routing, middleware stack, and strict HTTP payload validation (including strict `RFC3339` date enforcement).
 
 ### Rate Limiting Architecture Notice
 

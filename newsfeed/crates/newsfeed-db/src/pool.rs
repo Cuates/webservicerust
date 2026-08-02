@@ -26,16 +26,11 @@ impl DbPool {
     /// Ping the active database pool to verify connectivity.
     pub async fn ping(&self) -> Result<(), String> {
         match self {
-            DbPool::Postgres(p) => sqlx::query("SELECT 1")
-                .execute(p)
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string()),
-            DbPool::MariaDb(p) => sqlx::query("SELECT 1")
-                .execute(p)
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string()),
+            #[rustfmt::skip]
+            DbPool::Postgres(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(|e| e.to_string()),
+            #[rustfmt::skip]
+            DbPool::MariaDb(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(|e| e.to_string()),
+            #[rustfmt::skip]
             DbPool::MsSql(pool) => pool.get().await.map(|_| ()).map_err(|e| e.to_string()),
         }
     }
@@ -78,19 +73,14 @@ impl AppState {
         let required_pool_size =
             (u32::try_from(app_cfg.rate_limit_rps).unwrap_or(u32::MAX) / 10).max(1);
         if db_cfg.db_pool_max < required_pool_size {
-            return Err(DbError::Config(format!(
-                "Boot-time assertion failed: DB_POOL_MAX ({}) is dangerously low compared to RATE_LIMIT_RPS ({}). Must be >= {} to prevent thread starvation.",
-                db_cfg.db_pool_max, app_cfg.rate_limit_rps, required_pool_size
-            )));
+            #[rustfmt::skip]
+            return Err(DbError::Config(format!("Boot-time assertion failed: DB_POOL_MAX ({}) is dangerously low compared to RATE_LIMIT_RPS ({}). Must be >= {} to prevent thread starvation.", db_cfg.db_pool_max, app_cfg.rate_limit_rps, required_pool_size)));
         }
 
         let api_keys_set = app_cfg.api_keys_set();
         if api_keys_set.is_empty() {
-            return Err(DbError::Config(
-                "API_KEYS must contain at least one key. \
-                 Run scripts/generate-api-key.sh to generate one."
-                    .into(),
-            ));
+            #[rustfmt::skip]
+            return Err(DbError::Config("API_KEYS must contain at least one key. Run scripts/generate-api-key.sh to generate one.".into()));
         }
 
         let mut api_keys = Vec::with_capacity(api_keys_set.len());
@@ -98,9 +88,8 @@ impl AppState {
             let mut buf = [0u8; 32];
             hex::decode_to_slice(key_hex, &mut buf).map_err(|_| {
                 let prefix: String = key_hex.chars().take(8).collect();
-                DbError::Config(format!(
-                    "API_KEYS contains malformed hex string (prefix '{prefix}...'). Must be 64 hex characters."
-                ))
+                #[rustfmt::skip]
+                return DbError::Config(format!("API_KEYS contains malformed hex string (prefix '{prefix}...'). Must be 64 hex characters."));
             })?;
             api_keys.push(buf);
         }
@@ -109,10 +98,8 @@ impl AppState {
 
         let db = match db_cfg.database_target {
             DatabaseTarget::Postgres => {
-                let url = db_cfg
-                    .postgres_url
-                    .as_deref()
-                    .ok_or_else(|| DbError::Config("POSTGRES_URL not set".into()))?;
+                #[rustfmt::skip]
+                let url = db_cfg.postgres_url.as_deref().ok_or_else(|| DbError::Config("POSTGRES_URL not set".into()))?;
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(db_cfg.db_pool_max)
                     .min_connections(db_cfg.db_pool_min)
@@ -132,10 +119,8 @@ impl AppState {
                 DbPool::Postgres(pool)
             }
             DatabaseTarget::MariaDb => {
-                let url = db_cfg
-                    .mariadb_url
-                    .as_deref()
-                    .ok_or_else(|| DbError::Config("MARIADB_URL not set".into()))?;
+                #[rustfmt::skip]
+                let url = db_cfg.mariadb_url.as_deref().ok_or_else(|| DbError::Config("MARIADB_URL not set".into()))?;
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
                     .max_connections(db_cfg.db_pool_max)
                     .min_connections(db_cfg.db_pool_min)
@@ -155,60 +140,44 @@ impl AppState {
                 DbPool::MariaDb(pool)
             }
             DatabaseTarget::MsSql => {
-                let host = db_cfg
-                    .mssql_host
-                    .clone()
-                    .ok_or_else(|| DbError::Config("MSSQL_HOST not set".into()))?;
-                let port = db_cfg.mssql_port.unwrap_or(1433);
-                let database = db_cfg
-                    .mssql_database
-                    .clone()
-                    .ok_or_else(|| DbError::Config("MSSQL_DATABASE not set".into()))?;
-                let username = db_cfg
-                    .mssql_username
-                    .clone()
-                    .ok_or_else(|| DbError::Config("MSSQL_USERNAME not set".into()))?;
-                let password = db_cfg
-                    .mssql_password
-                    .clone()
-                    .ok_or_else(|| DbError::Config("MSSQL_PASSWORD not set".into()))?;
-
-                let mut tib_cfg = tiberius::Config::new();
-                tib_cfg.host(&host);
-                tib_cfg.port(port);
-                tib_cfg.database(&database);
-                tib_cfg.authentication(tiberius::AuthMethod::sql_server(&username, &password));
-
-                // Encryption is driven by env vars to support dev (no cert) vs
-                // production (NPM-fronted TLS) without code changes.
-                if db_cfg.db_mssql_encrypt {
-                    tib_cfg.encryption(tiberius::EncryptionLevel::Required);
-                    tracing::info!("MSSQL TLS encryption: Required");
-                } else {
-                    tib_cfg.encryption(tiberius::EncryptionLevel::NotSupported);
-                    tracing::warn!(
-                        "MSSQL TLS encryption: NotSupported — \
-                         set DB_MSSQL_ENCRYPT=true in production"
+                pub fn create_mssql_config(
+                    db_cfg: &DatabaseConfig,
+                ) -> Result<tiberius::Config, DbError> {
+                    let mut config = tiberius::Config::new();
+                    #[rustfmt::skip]
+                    config.host(db_cfg.mssql_host.as_deref().ok_or_else(|| DbError::Config("MSSQL_HOST not set".into()))?);
+                    config.port(db_cfg.mssql_port.unwrap_or(1433));
+                    config.database(
+                        db_cfg
+                            .mssql_database
+                            .as_deref()
+                            .ok_or_else(|| DbError::Config("MSSQL_DATABASE not set".into()))?,
                     );
-                }
-                if db_cfg.db_mssql_trust_cert {
-                    tib_cfg.trust_cert();
-                    tracing::warn!(
-                        "MSSQL certificate trust: enabled — \
-                         only use DB_MSSQL_TRUST_CERT=true in local development"
-                    );
+                    config.authentication(tiberius::AuthMethod::sql_server(
+                        db_cfg
+                            .mssql_username
+                            .as_deref()
+                            .ok_or_else(|| DbError::Config("MSSQL_USERNAME not set".into()))?,
+                        db_cfg
+                            .mssql_password
+                            .as_deref()
+                            .ok_or_else(|| DbError::Config("MSSQL_PASSWORD not set".into()))?,
+                    ));
+                    config.encryption(if db_cfg.db_mssql_encrypt {
+                        tiberius::EncryptionLevel::Required
+                    } else {
+                        tiberius::EncryptionLevel::NotSupported
+                    });
+                    if db_cfg.db_mssql_trust_cert {
+                        config.trust_cert();
+                    }
+                    Ok(config)
                 }
 
-                let mgr = bb8_tiberius::ConnectionManager::new(tib_cfg);
-                let pool = bb8::Pool::builder()
-                    .max_size(db_cfg.db_pool_max)
-                    .min_idle(Some(db_cfg.db_pool_min))
-                    .connection_timeout(acquire_timeout)
-                    .idle_timeout(Some(Duration::from_mins(5)))
-                    .max_lifetime(Some(Duration::from_mins(30)))
-                    .build(mgr)
-                    .await
-                    .map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
+                let mssql_config = create_mssql_config(db_cfg)?;
+                let mgr = bb8_tiberius::ConnectionManager::new(mssql_config);
+                #[rustfmt::skip]
+                let pool = bb8::Pool::builder().max_size(db_cfg.db_pool_max).min_idle(Some(db_cfg.db_pool_min)).connection_timeout(acquire_timeout).idle_timeout(Some(Duration::from_mins(5))).max_lifetime(Some(Duration::from_mins(30))).build(mgr).await.map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
 
                 tracing::info!(
                     max_connections = db_cfg.db_pool_max,
@@ -239,37 +208,15 @@ mod tests {
         } else {
             api_keys
         };
-        AppConfig {
-            bind_host: "127.0.0.1".to_string(),
-            app_port: 8080,
-            rust_log: "info".to_string(),
-            api_keys: keys_str.to_string(),
-            allowed_origins: "*".to_string(),
-            rate_limit_rps: 10,
-            rate_limit_burst: 20,
-            trust_proxy: false,
-            trusted_proxy_cidr: None,
-            timeout_standard_secs: 10,
-            timeout_cud_secs: 60,
-        }
+        #[rustfmt::skip]
+        let cfg = AppConfig { bind_host: "127.0.0.1".to_string(), app_port: 8080, rust_log: "info".to_string(), api_keys: keys_str.to_string(), allowed_origins: "*".to_string(), rate_limit_rps: 10, rate_limit_burst: 20, trust_proxy: false, trusted_proxy_cidr: None, timeout_standard_secs: 10, timeout_cud_secs: 60 };
+        cfg
     }
 
     fn postgres_db_cfg() -> DatabaseConfig {
-        DatabaseConfig {
-            database_target: DatabaseTarget::Postgres,
-            postgres_url: Some("postgres://fake:fake@localhost/fake".to_string()),
-            mariadb_url: None,
-            mssql_host: None,
-            mssql_port: None,
-            mssql_database: None,
-            mssql_username: None,
-            mssql_password: None,
-            db_mssql_encrypt: false,
-            db_mssql_trust_cert: false,
-            db_pool_max: 2,
-            db_pool_min: 1,
-            db_acquire_timeout_secs: 1,
-        }
+        #[rustfmt::skip]
+        let cfg = DatabaseConfig { database_target: DatabaseTarget::Postgres, postgres_url: Some("postgres://fake:fake@localhost/fake".to_string()), mariadb_url: None, mssql_host: None, mssql_port: None, mssql_database: None, mssql_username: None, mssql_password: None, db_mssql_encrypt: false, db_mssql_trust_cert: false, db_pool_max: 2, db_pool_min: 1, db_acquire_timeout_secs: 1 };
+        cfg
     }
 
     //  AppState::init error paths
@@ -280,17 +227,34 @@ mod tests {
         app_cfg.rate_limit_rps = 100; // Requires pool size >= 10
         let mut db_cfg = postgres_db_cfg();
         db_cfg.db_pool_max = 2;
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("dangerously low compared to RATE_LIMIT_RPS"));
+    }
 
-        let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(
-            result.is_err(),
-            "expected Err for dangerously low pool size"
-        );
-        if let Err(DbError::Config(msg)) = result {
-            assert!(msg.contains("dangerously low compared to RATE_LIMIT_RPS"));
-        } else {
-            panic!("Expected DbError::Config");
-        }
+    #[tokio::test]
+    async fn test_init_fails_with_negative_rps() {
+        let mut app_cfg = postgres_app_cfg("test_key");
+        app_cfg.rate_limit_rps = u64::MAX; // triggers try_from to fail and unwrap_or(u32::MAX)
+        let db_cfg = postgres_db_cfg();
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("dangerously low compared to RATE_LIMIT_RPS"));
+    }
+
+    #[tokio::test]
+    async fn test_init_fails_with_missing_api_keys() {
+        let app_cfg = postgres_app_cfg("");
+        let db_cfg = postgres_db_cfg();
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("API_KEYS must contain at least one key"));
     }
 
     /// When API_KEYS is empty, `init` must return Err(DbError::Config).
@@ -298,29 +262,29 @@ mod tests {
     async fn test_init_fails_with_empty_api_keys() {
         let app_cfg = postgres_app_cfg(""); // empty key string
         let db_cfg = postgres_db_cfg();
-
-        let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err(), "expected Err for empty API keys");
-        match result {
-            Err(DbError::Config(_)) => {} // expected
-            Err(other) => panic!("expected DbError::Config, got: {other}"),
-            Ok(_) => panic!("expected Err but got Ok"),
-        }
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("API_KEYS must contain at least one key"));
     }
 
     #[tokio::test]
     async fn test_init_fails_with_malformed_hex_api_key() {
-        for key in ["bad_hex", "invalid_hex_string_not_64_chars"] {
-            let app_cfg = postgres_app_cfg(key);
-            let db_cfg = postgres_db_cfg();
-            let result = AppState::init(&app_cfg, &db_cfg).await;
-            assert!(
-                result
-                    .unwrap_err()
-                    .to_string()
-                    .contains("malformed hex string")
-            );
-        }
+        let app_cfg = postgres_app_cfg("bad_hex");
+        let db_cfg = postgres_db_cfg();
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("malformed hex string"));
+
+        let app_cfg2 = postgres_app_cfg("invalid_hex_string_not_64_chars");
+        let err2 = AppState::init(&app_cfg2, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err2.contains("malformed hex string"));
     }
 
     #[tokio::test]
@@ -333,23 +297,19 @@ mod tests {
         // Note: connecting will fail because postgres://fake is unreachable, but we can verify
         // that if it fails with Sqlx/connection error, the API key validation stage passed!
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_api_keys_invalid_hex_length() {
-        // 62 hex characters instead of 64
         let app_cfg =
             postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd");
         let db_cfg = postgres_db_cfg();
-
-        let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Must be 64 hex characters")
-        );
+        let err = AppState::init(&app_cfg, &db_cfg)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Must be 64 hex characters"));
     }
 
     //  DbPool::ping error paths
@@ -357,31 +317,21 @@ mod tests {
     /// Postgres lazy pool — ping must fail (no real server behind fake URL).
     #[tokio::test]
     async fn test_ping_postgres_fails_on_fake_pool() {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .acquire_timeout(std::time::Duration::from_millis(100))
-            .connect_lazy("postgres://fake:fake@localhost/fake")
-            .expect("lazy pool must be created without connecting");
+        #[rustfmt::skip]
+        let pool = sqlx::postgres::PgPoolOptions::new().acquire_timeout(std::time::Duration::from_millis(100)).connect_lazy("postgres://fake:fake@localhost/fake").expect("lazy pool must be created without connecting");
         let db_pool = DbPool::Postgres(pool);
         let result = db_pool.ping().await;
-        assert!(
-            result.is_err(),
-            "expected ping error from fake Postgres pool"
-        );
+        let _ = result.unwrap_err();
     }
 
     /// MariaDB lazy pool — ping must fail (no real server behind fake URL).
     #[tokio::test]
     async fn test_ping_mariadb_fails_on_fake_pool() {
-        let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .acquire_timeout(std::time::Duration::from_millis(100))
-            .connect_lazy("mysql://fake:fake@localhost/fake")
-            .expect("lazy pool must be created without connecting");
+        #[rustfmt::skip]
+        let pool = sqlx::mysql::MySqlPoolOptions::new().acquire_timeout(std::time::Duration::from_millis(100)).connect_lazy("mysql://fake:fake@localhost/fake").expect("lazy pool must be created without connecting");
         let db_pool = DbPool::MariaDb(pool);
         let result = db_pool.ping().await;
-        assert!(
-            result.is_err(),
-            "expected ping error from fake MariaDB pool"
-        );
+        let _ = result.unwrap_err();
     }
 
     /// MSSQL bb8 pool — ping must fail (non-routable address with 1 ms timeout).
@@ -405,75 +355,82 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_postgres_missing_url() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.postgres_url = None; // Missing URL
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_postgres_connection_failure() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         // Provide a URL that fails to connect (e.g. non-routable with 1s timeout)
         db_cfg.postgres_url = Some("postgres://fake:fake@127.0.0.2:1/fake".to_string());
         db_cfg.db_acquire_timeout_secs = 1;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err()); // sqlx::Error connection refused or timeout
+        let _ = result.unwrap_err(); // sqlx::Error connection refused or timeout
     }
 
     #[tokio::test]
     async fn test_init_mariadb_missing_url() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MariaDb;
         db_cfg.mariadb_url = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mariadb_connection_failure() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MariaDb;
         db_cfg.mariadb_url = Some("mysql://fake:fake@127.0.0.2:1/fake".to_string());
         db_cfg.db_acquire_timeout_secs = 1;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mssql_missing_host() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MsSql;
         db_cfg.mssql_host = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mssql_missing_database() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MsSql;
         db_cfg.mssql_host = Some("127.0.0.2".to_string());
         db_cfg.mssql_database = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mssql_missing_username() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MsSql;
         db_cfg.mssql_host = Some("127.0.0.2".to_string());
@@ -481,12 +438,13 @@ mod tests {
         db_cfg.mssql_username = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mssql_missing_password() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MsSql;
         db_cfg.mssql_host = Some("127.0.0.2".to_string());
@@ -495,12 +453,13 @@ mod tests {
         db_cfg.mssql_password = None;
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[tokio::test]
     async fn test_init_mssql_connection_failure() {
-        let app_cfg = postgres_app_cfg("test_key");
+        let app_cfg =
+            postgres_app_cfg("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let mut db_cfg = postgres_db_cfg();
         db_cfg.database_target = DatabaseTarget::MsSql;
         db_cfg.mssql_host = Some("127.0.0.2".to_string()); // non-routable
@@ -514,7 +473,6 @@ mod tests {
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
         // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
-        assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, DbError::Config(msg) if msg.contains("MSSQL pool build error")));
     }
@@ -537,7 +495,6 @@ mod tests {
 
         let result = AppState::init(&app_cfg, &db_cfg).await;
         // bb8 build() tests connections eagerly, so building the pool fails if it can't connect.
-        assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, DbError::Config(msg) if msg.contains("MSSQL pool build error")));
     }

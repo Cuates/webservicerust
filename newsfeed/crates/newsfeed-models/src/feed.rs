@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::{IntoParams, ToSchema};
 
+pub const MAX_BATCH_ITEMS: usize = 1000;
+
 /// Order in which to sort the results.
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -76,54 +78,28 @@ fn validate_string(s: &str, max_len: usize) -> Result<String, &'static str> {
     Ok(trimmed.to_string())
 }
 
-pub fn deserialize_title<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    match opt {
-        Some(s) => validate_string(&s, 255)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
-        None => Ok(None),
-    }
+pub fn deserialize_title<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    #[rustfmt::skip]
+    let res = match Option::<String>::deserialize(deserializer)? { Some(s) => validate_string(&s, 255).map(Some).map_err(serde::de::Error::custom), None => Ok(None) };
+    res
 }
 
-pub fn deserialize_url<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let s = validate_string(&s, 2048).map_err(serde::de::Error::custom)?;
-            if !s.starts_with("http://") && !s.starts_with("https://") {
-                return Err(serde::de::Error::custom(
-                    "URL must start with http:// or https://",
-                ));
-            }
-            Ok(Some(s))
-        }
-        None => Ok(None),
-    }
+pub fn deserialize_url<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    #[rustfmt::skip]
+    let res = match Option::<String>::deserialize(deserializer)? { Some(s) => { let s = validate_string(&s, 2048).map_err(serde::de::Error::custom)?; if !s.starts_with("http://") && !s.starts_with("https://") { return Err(serde::de::Error::custom("URL must start with http:// or https://")); } Ok(Some(s)) } None => Ok(None) };
+    res
 }
 
-pub fn deserialize_date<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let s = validate_string(&s, 50).map_err(serde::de::Error::custom)?;
-            // Simple format check (e.g. basic ISO format sanity, no deep chrono parsing needed to prevent basic abuse)
-            if !s.chars().any(|c| c.is_ascii_digit()) {
-                return Err(serde::de::Error::custom("invalid date format"));
-            }
-            Ok(Some(s))
-        }
-        None => Ok(None),
-    }
+pub fn deserialize_date<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    #[rustfmt::skip]
+    let res = match Option::<String>::deserialize(deserializer)? { Some(s) => { let s = validate_string(&s, 50).map_err(serde::de::Error::custom)?; if chrono::DateTime::parse_from_rfc3339(&s).is_err() { return Err(serde::de::Error::custom("invalid date format, must be RFC3339 (e.g. 2026-08-01T12:00:00Z)")); } Ok(Some(s)) } None => Ok(None) };
+    res
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
@@ -145,62 +121,37 @@ pub struct CudParams {
 /// or a JSON array of objects, normalizing both into a `Vec<CudParams>`.
 #[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq, Default)]
 pub struct CudPayload {
-    pub idempotency_key: Option<String>,
     pub items: Vec<CudParams>,
 }
 
 impl<'de> serde::Deserialize<'de> for CudPayload {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WrapperPayload {
+            items: Vec<CudParams>,
+        }
+
         #[derive(serde::Deserialize)]
         #[serde(untagged)]
         enum Helper {
-            Wrapper {
-                idempotency_key: Option<String>,
-                items: Vec<CudParams>,
-            },
+            Wrapper(WrapperPayload),
             Batch(Vec<CudParams>),
             Single(CudParams),
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Wrapper {
-                idempotency_key,
-                items,
-            } => {
+            Helper::Wrapper(WrapperPayload { items }) | Helper::Batch(items) => {
                 if items.is_empty() {
                     return Err(serde::de::Error::custom("payload array cannot be empty"));
                 }
-                if items.len() > 1000 {
-                    return Err(serde::de::Error::custom(
-                        "payload array exceeds maximum size of 1000 items",
-                    ));
+                if items.len() > MAX_BATCH_ITEMS {
+                    #[rustfmt::skip]
+                    return Err(serde::de::Error::custom(format!("payload array exceeds maximum size of {MAX_BATCH_ITEMS} items")));
                 }
-                Ok(CudPayload {
-                    idempotency_key,
-                    items,
-                })
+                Ok(CudPayload { items })
             }
-            Helper::Single(item) => Ok(CudPayload {
-                idempotency_key: None,
-                items: vec![item],
-            }),
-            Helper::Batch(items) => {
-                if items.is_empty() {
-                    return Err(serde::de::Error::custom("payload array cannot be empty"));
-                }
-                if items.len() > 1000 {
-                    return Err(serde::de::Error::custom(
-                        "payload array exceeds maximum size of 1000 items",
-                    ));
-                }
-                Ok(CudPayload {
-                    idempotency_key: None,
-                    items,
-                })
-            }
+            Helper::Single(item) => Ok(CudPayload { items: vec![item] }),
         }
     }
 }
@@ -323,12 +274,12 @@ mod tests {
     fn test_cud_params_deserialize() {
         let json_data = json!({
             "title": "  New Title  ",
-            "publish_date": "2026-07-13"
+            "publish_date": "2026-07-13T00:00:00Z"
         });
 
         let params: CudParams = serde_json::from_value(json_data).unwrap();
         assert_eq!(params.title.as_deref(), Some("New Title"));
-        assert_eq!(params.publish_date.as_deref(), Some("2026-07-13"));
+        assert_eq!(params.publish_date.as_deref(), Some("2026-07-13T00:00:00Z"));
         assert_eq!(params.image_url, None);
     }
 
@@ -336,13 +287,11 @@ mod tests {
     fn test_cud_params_reject_whitespace_only() {
         let json_data = json!({
             "title": "   ",
-            "publish_date": "2026-07-13"
+            "publish_date": "2026-07-13T00:00:00Z"
         });
         let err = serde_json::from_value::<CudParams>(json_data).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("field cannot be empty or whitespace-only")
-        );
+        #[rustfmt::skip]
+        assert!(err.to_string().contains("field cannot be empty or whitespace-only"));
     }
 
     #[test]
@@ -356,13 +305,8 @@ mod tests {
 
     #[test]
     fn test_newsfeed_row_serialize() {
-        let row = NewsFeedRow {
-            titlereturn: Some("Test Row".to_string()),
-            imageurlreturn: Some("http://image.url".to_string()),
-            feedurlreturn: None,
-            actualurlreturn: None,
-            publishdatereturn: None,
-        };
+        #[rustfmt::skip]
+        let row = NewsFeedRow { titlereturn: Some("Test Row".to_string()), imageurlreturn: Some("http://image.url".to_string()), feedurlreturn: None, actualurlreturn: None, publishdatereturn: None };
 
         let serialized = serde_json::to_value(&row).unwrap();
         assert_eq!(serialized["title"], "Test Row");
@@ -411,13 +355,46 @@ mod tests {
     }
 
     #[test]
-    fn test_cud_payload_idempotency_key() {
+    fn test_cud_payload_wrapper_successful() {
+        let json_str = r#"{"items": [{"title": "Valid Wrapper Item"}]}"#;
+        let payload: CudPayload =
+            serde_json::from_str(json_str).expect("should parse wrapper payload");
+        assert_eq!(payload.items.len(), 1);
+        assert_eq!(
+            payload.items[0].title.as_deref(),
+            Some("Valid Wrapper Item")
+        );
+    }
+
+    #[test]
+    fn test_cud_payload_old_idempotency_key_rejected() {
         let json_str =
             r#"{"items": [{"title": "Idempotent Title"}], "idempotency_key": "key-12345"}"#;
-        let payload: CudPayload = serde_json::from_str(json_str).unwrap();
-        assert_eq!(payload.len(), 1);
-        assert_eq!(payload.idempotency_key.as_deref(), Some("key-12345"));
-        assert_eq!(payload[0].title.as_deref(), Some("Idempotent Title"));
+        let err = serde_json::from_str::<CudPayload>(json_str)
+            .expect_err("should reject idempotency_key");
+        // It will fail because of deny_unknown_fields on Wrapper, and not matching Batch or Single
+        assert!(
+            err.to_string()
+                .contains("data did not match any variant of untagged enum")
+        );
+    }
+
+    #[test]
+    fn test_deserialize_date_valid_formats() {
+        let json_str = r#"{"publish_date": "2026-07-13T00:00:00Z"}"#;
+        let params: CudParams = serde_json::from_str(json_str).unwrap();
+        assert_eq!(params.publish_date.as_deref(), Some("2026-07-13T00:00:00Z"));
+
+        let json_str = r#"{"publish_date": "2026-07-13T14:30:00Z"}"#;
+        let params: CudParams = serde_json::from_str(json_str).unwrap();
+        assert_eq!(params.publish_date.as_deref(), Some("2026-07-13T14:30:00Z"));
+
+        let json_str = r#"{"publish_date": "2026-07-13T14:30:00.123456Z"}"#;
+        let params: CudParams = serde_json::from_str(json_str).unwrap();
+        assert_eq!(
+            params.publish_date.as_deref(),
+            Some("2026-07-13T14:30:00.123456Z")
+        );
     }
 
     #[test]

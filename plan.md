@@ -17,10 +17,11 @@ The initial rewrite from Python FastAPI to Rust Axum is 100% complete and stable
 8. **Testing & CI**: Implemented comprehensive integration tests (`axum-test`), auto-generated OpenAPI documentation (`utoipa`), and established GitHub Actions workflows enforcing strict code coverage thresholds (`cargo-llvm-cov`).
 9. **Release Automation**: Implemented a GitHub Actions release pipeline (`newsfeed-release.yml`) for cross-platform artifact bundling and published version `4.0.0`.
 10. **Test Coverage & Reliability**: Achieved 99.54% test coverage workspace-wide, unified HTTP error handling via `newsfeed-constants`, and integrated `testcontainers` for dynamically provisioning ephemeral databases during automated tests.
-11. **Security & Resiliency**: Enforced global rate limiting (`tower_governor`), strict 500-item payload batch limits, and timing-attack resistant `SHA-256` API key hashing.
+11. **Security & Resiliency**: Enforced global rate limiting (`tower_governor`), strict 1000-item payload batch limits, and timing-attack resistant `SHA-256` API key hashing.
 12. **Release 4.0.0 & QA**: Hardened dependency tree (zero unused crates via `cargo machete`), verified end-to-end multi-database HTTP scenarios, and bumped workspace version to `4.0.0`.
 13. **Release 4.1.0 & Architectural Hardening**: Decoupled HTTP payload validation into `validation.rs`, enforced whitespace rejection via `deserialize_non_empty_option`, implemented unified cross-engine bulk JSON insertion (`cud_bulk_json_newsfeed`), mapped DB conflict-writes to `Skipped` status, and bumped workspace version to `4.1.0`.
 14. **Release 4.2.0**: Enforced a strict workspace pre-commit hygiene pipeline (`cargo make check`, `machete`, `test-coverage`) and bumped workspace package version to `4.2.0`.
+15. **Release 4.3.0**: Synchronized codebase for strict RFC3339 date handling across integration tests and lowered coverage reporting threshold, bumping workspace package version to `4.3.0`.
 
 ### Next Up (Future Planning)
 

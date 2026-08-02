@@ -50,6 +50,11 @@ webservicerust
 |           0004-security-and-batch-limits.md
 |           0005-unified-cud-handlers.md
 |           0006-dependency-hardening-and-machete-protocol.md
+|           0007-conflict-write-status-change.md
+|           0008-decouple-http-validation.md
+|           0009-cross-engine-bulk-cud-parity.md
+|           0010-strict-rfc3339-date-handling.md
+|           0011-pre-commit-hygiene-pipeline.md
 |           
 +---newsfeed/
 |   +---crates/
@@ -151,12 +156,12 @@ webservicerust
 2. **`newsfeed-config`**: Responsible for parsing environment variables using `envy` into strictly-typed Rust structs at startup. Ensures the app panics early if configuration is invalid. Includes connection pool sizing and concurrency limits.
 3. **`newsfeed-models`**: Contains the core domain models (`ExtractParams`, `CudParams`, `NewsFeedRow`) and handles mapping responses from the database layer and formatting JSON responses.
 4. **`newsfeed-db`**: Handles all Database connections and queries. It exposes generic query methods that abstract away the underlying `DATABASE_TARGET` (PostgreSQL, MariaDB, or MSSQL) from the upper layers. MSSQL is managed via a `bb8-tiberius` async connection pool to avoid TCP handshake overhead. Employs `sqlx` migrations for Postgres/MariaDB, and custom raw scripts for testing. Includes `shared.rs` for shared query execution logic across engine implementations.
-5. **`newsfeed-service`**: Contains the core business logic. It orchestrates requests and bridges the HTTP handler parameters with the `newsfeed-db` execution methods, enforcing a strict 500-item batch limit for bulk processing.
+5. **`newsfeed-service`**: Contains the core business logic. It orchestrates requests and bridges the HTTP handler parameters with the `newsfeed-db` execution methods, enforcing a strict 1000-item batch limit for bulk processing.
 6. **`newsfeed-server`**: The application entrypoint (binary). It uses `axum` to build the HTTP server, constructs the middleware stack (Rate Limiting via `tower_governor`, Timing-attack resistant API Key Auth via `SHA-256`, secure `ip_extractor` proxy fallback, CORS, Tracing, Body Limits), standardizes custom JSON error extraction via `extractors.rs` (using unified `ResponseCode`s), enforces strict HTTP payload and required field boundaries natively via `validation.rs`, implements graceful shutdown across OS platforms via `shutdown.rs`, and exposes the OpenAPI Swagger UI (`/swagger-ui`). It also houses the suite of `axum-test` integration tests.
 
 ## Continuous Integration & Testing
 
-- The workspace enforces code coverage thresholds via `cargo-llvm-cov` locally (`cargo make test-coverage`) and in CI (`.github/workflows/newsfeed-ci.yml`).
+- The workspace enforces a strict pre-commit hygiene pipeline locally via `cargo make` (compilation `check`, `check-deadcode`, unused dependency `machete` audits, `fix`, security `audit`, strict >99% `test-coverage`, and `lint-docs`) and mirrors this pipeline in CI (`.github/workflows/newsfeed-ci.yml`).
 - Core logic and payload validation are tested via standard `#[test]` unit tests inside the library crates.
 - API routing and middleware are verified via in-memory server testing in `newsfeed-server/tests/integration_test.rs`.
 - Integration tests dynamically provision fully isolated, ephemeral databases on random ports using the `testcontainers` crate, automatically executing a robust test matrix across PostgreSQL, MariaDB, and MSSQL. Manual test databases are available in `docker-compose.test.yml`. Live database instances can also be tested by bypassing containers via `TEST_*_URL` environment variables.

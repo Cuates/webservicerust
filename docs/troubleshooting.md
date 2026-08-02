@@ -44,8 +44,8 @@ The service enforces strict configuration validation at startup. If it fails to 
 - **Issue**: You send a payload and receive an HTTP error status such as `415`, `422`, or `400`.
 - **Solution**:
   - **HTTP 415**: Ensure you are sending the `Content-Type: application/json; charset=utf-8` header. The payload validator is extremely strict and requires the charset to be explicitly defined.
-  - **HTTP 422**: You are sending extra or unrecognized JSON keys in your payload, or sending empty/whitespace-only strings. All domain models enforce `#[serde(deny_unknown_fields)]` and reject malformed, inflated, or whitespace-only requests with a structured `VALIDATION_ERROR` code.
-  - **HTTP 400**: Verify your JSON syntax is valid and does not exceed the strict **500-item batch limit** for bulk operations.
+  - **HTTP 422**: You are sending extra or unrecognized JSON keys in your payload, sending empty/whitespace-only strings, or passing improperly formatted dates. All domain models enforce `#[serde(deny_unknown_fields)]` and reject malformed, inflated, or whitespace-only requests with a structured `VALIDATION_ERROR` code. Dates must strictly conform to `RFC3339` (e.g., `YYYY-MM-DDTHH:MM:SSZ`).
+  - **HTTP 400**: Verify your JSON syntax is valid and does not exceed the strict **1000-item batch limit** for bulk operations.
   - Our custom `AppJson` extractor masks raw stack traces and instead maps errors to structured responses using unified constants (e.g., `Code: "BAD_REQUEST"`, `Code: "VALIDATION_ERROR"`) to prevent data leaks.
 
 ## 6. API Returns `404 Not Found` with JSON Body

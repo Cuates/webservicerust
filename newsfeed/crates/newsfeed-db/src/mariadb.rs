@@ -35,6 +35,9 @@ pub async fn extract_feed(
 
     use sqlx::Row;
     let mut feed_rows = Vec::with_capacity(raw_rows.len());
+    // Note: sqlx cannot map MySQL/MariaDB stored procedure results using `query_as`
+    // due to how the MySQL protocol returns multiple result sets for CALL statements.
+    // We must manually iterate and extract columns by index using `try_get`.
     for row in raw_rows {
         feed_rows.push(row_to_news_feed_row(
             row.try_get(0)?,

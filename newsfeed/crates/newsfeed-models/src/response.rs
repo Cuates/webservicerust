@@ -70,6 +70,23 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 
+    /// Construct a partial success response.
+    pub fn partial(
+        message: impl Into<String>,
+        result: Vec<T>,
+        failed_items: Vec<FailedItem>,
+    ) -> Self {
+        let count = result.len();
+        Self {
+            status: "Partial".to_owned(),
+            code: "OK".to_owned(),
+            message: message.into(),
+            count,
+            result,
+            failed_items,
+        }
+    }
+
     /// Construct an error response with a specific machine-readable code.
     pub fn error_with_code(
         code: impl Into<String>,
@@ -174,5 +191,23 @@ mod tests {
         assert_eq!(serialized["Count"], 1);
         assert_eq!(serialized["Result"][0]["id"], 2);
         assert_eq!(serialized["FailedItems"][0]["Reason"], "validation failed");
+    }
+
+    #[test]
+    fn test_api_response_partial_constructor() {
+        let resp = ApiResponse::partial(
+            "Some failed",
+            vec![json!({"id": 2})],
+            vec![FailedItem {
+                item: json!({"id": 1}),
+                reason: "error".to_owned(),
+            }],
+        );
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["Status"], "Partial");
+        assert_eq!(serialized["Code"], "OK");
+        assert_eq!(serialized["Count"], 1);
+        assert_eq!(serialized["Result"][0]["id"], 2);
+        assert_eq!(serialized["FailedItems"][0]["Reason"], "error");
     }
 }

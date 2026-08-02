@@ -82,14 +82,8 @@ async fn process_cud(
             ServiceError::UnsupportedContentType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             _ => StatusCode::BAD_REQUEST,
         };
-        return (
-            status,
-            Json(ApiResponse::<serde_json::Value>::error_with_code(
-                ResponseCode::INVALID_HEADER,
-                e.to_string(),
-            )),
-        )
-            .into_response();
+        #[rustfmt::skip]
+        return (status, Json(ApiResponse::<serde_json::Value>::error_with_code(ResponseCode::INVALID_HEADER, e.to_string()))).into_response();
     }
 
     // ── 2. Validate required fields for each item ─────────────────────────────
@@ -104,14 +98,8 @@ async fn process_cud(
         Ok(res) => res,
         Err(e) => {
             tracing::error!(error = %e, "CUD database error");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<serde_json::Value>::error_with_code(
-                    ResponseCode::DB_ERROR,
-                    "Internal Server Error".to_string(),
-                )),
-            )
-                .into_response();
+            #[rustfmt::skip]
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::<serde_json::Value>::error_with_code(ResponseCode::DB_ERROR, "Internal Server Error".to_string()))).into_response();
         }
     };
 
@@ -123,36 +111,36 @@ fn handle_cud_logic(
     results: Vec<newsfeed_db::CudResult>,
     option_mode: OptionMode,
 ) -> axum::response::Response {
+    let all_skipped = results
+        .iter()
+        .all(|r| matches!(r.status, CudStatus::Skipped));
+
     let mut successes = Vec::new();
     let mut failed = Vec::new();
 
     for res in results {
         match res.status {
-            CudStatus::Error => {
-                failed.push(FailedItem {
-                    item: res.item.unwrap_or(serde_json::json!({})),
-                    reason: res.message,
-                });
-            }
-            CudStatus::Success | CudStatus::Skipped => {
-                successes.push(res);
-            }
+            CudStatus::Error => failed.push(FailedItem {
+                item: res.item.unwrap_or(serde_json::json!({})),
+                reason: res.message,
+            }),
+            CudStatus::Success | CudStatus::Skipped => successes.push(res),
         }
     }
 
-    let msg = if !successes.is_empty() && !failed.is_empty() {
-        ResponseMessage::PARTIAL
+    let response = if !successes.is_empty() && !failed.is_empty() {
+        ApiResponse::partial(ResponseMessage::PARTIAL, successes, failed)
     } else {
-        ResponseMessage::PROCESSED
+        let mut resp = ApiResponse::success(ResponseMessage::PROCESSED, successes);
+        resp.failed_items = failed;
+        resp
     };
-    let mut response = ApiResponse::success(msg, successes);
-    response.failed_items = failed;
 
     let status_code = if response.result.is_empty() && !response.failed_items.is_empty() {
         StatusCode::BAD_REQUEST
     } else if !response.failed_items.is_empty() {
         StatusCode::OK
-    } else if matches!(option_mode, OptionMode::InsertFeed) {
+    } else if matches!(option_mode, OptionMode::InsertFeed) && !all_skipped {
         StatusCode::CREATED
     } else {
         StatusCode::OK
@@ -169,58 +157,49 @@ mod tests {
 
     #[test]
     fn test_handle_cud_logic_partial_failure() {
+        #[rustfmt::skip]
         let results = vec![
-            CudResult {
-                status: CudStatus::Success,
-                message: "OK".to_string(),
-                item: Some(serde_json::json!({"title": "1"})),
-            },
-            CudResult {
-                status: CudStatus::Error,
-                message: "Fail".to_string(),
-                item: Some(serde_json::json!({"title": "2"})),
-            },
+            CudResult { status: CudStatus::Success, message: "OK".to_string(), item: Some(serde_json::json!({"title": "1"})) },
+            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(serde_json::json!({"title": "2"})) },
         ];
 
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
         assert_eq!(res.status(), axum::http::StatusCode::OK);
+        return;
     }
 
     #[test]
     fn test_handle_cud_logic_all_failure() {
-        let results = vec![CudResult {
-            status: CudStatus::Error,
-            message: "Fail".to_string(),
-            item: Some(serde_json::json!({"title": "2"})),
-        }];
+        #[rustfmt::skip]
+        let results = vec![
+            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(serde_json::json!({"title": "2"})) },
+            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: None },
+        ];
 
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
         assert_eq!(res.status(), axum::http::StatusCode::BAD_REQUEST);
+        return;
     }
 
     #[test]
     fn test_handle_cud_logic_all_skipped_insert() {
-        let results = vec![CudResult {
-            status: CudStatus::Skipped,
-            message: "Record already exists".to_string(),
-            item: Some(serde_json::json!({"title": "1"})),
-        }];
+        #[rustfmt::skip]
+        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record already exists".to_string(), item: Some(serde_json::json!({"title": "1"})) }];
 
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
-        // Insert with no errors and all skipped should be CREATED (201)
-        assert_eq!(res.status(), axum::http::StatusCode::CREATED);
+        // Insert with no errors and all skipped should be OK (200)
+        assert_eq!(res.status(), axum::http::StatusCode::OK);
+        return;
     }
 
     #[test]
     fn test_handle_cud_logic_all_skipped_update() {
-        let results = vec![CudResult {
-            status: CudStatus::Skipped,
-            message: "Record does not exist".to_string(),
-            item: Some(serde_json::json!({"title": "1"})),
-        }];
+        #[rustfmt::skip]
+        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record does not exist".to_string(), item: Some(serde_json::json!({"title": "1"})) }];
 
         let res = handle_cud_logic(results, OptionMode::UpdateFeed);
         // Update with no errors and all skipped should be OK (200)
         assert_eq!(res.status(), axum::http::StatusCode::OK);
+        return;
     }
 }

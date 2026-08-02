@@ -15,7 +15,7 @@ This is the only binary crate in the workspace. It compiles down to the actual e
   - `ip_extractor::secure_ip_extractor`: Acts as a secure proxy fallback middleware for rate-limiting behind load balancers, extracting real client IPs from `X-Forwarded-For` or `X-Real-IP` headers.
   - `api_key::api_key_middleware`: Intercepts requests, checking the `X-API-Key` header using a timing-attack resistant `SHA-256` hashing mechanism.
 - **Error Standardization**: Implements a custom `AppJson` extractor overriding Axum's default serialization, mapping extraction failures into structured JSON using unified constants (e.g., `Code: "BAD_REQUEST"`) instead of plain-text stack traces. Also includes `not_found.rs` as a fallback handler to guarantee unmapped routes return structured JSON `404` errors.
-- **Payload Validation**: Houses HTTP boundary validation logic natively within `validation.rs`, ensuring required fields and parameters (like extraction limits) are validated securely before reaching the core service layer.
+- **Payload Validation**: Houses HTTP boundary validation logic natively within `validation.rs`, ensuring required fields, parameters (like extraction limits), and strict `RFC3339` date formats are validated securely before reaching the core service layer.
 - **Tracing & CORS**: Integrates `tower_http` layers for robust structured logging and Cross-Origin Resource Sharing capabilities.
 - **Graceful Shutdown**: Employs `shutdown.rs` to listen for SIGINT (Ctrl+C) and OS signals cross-platform (including Windows) and terminates active connections gracefully.
 - **OpenAPI / Swagger**: Uses `utoipa` to auto-generate OpenAPI specifications and hosts a Swagger UI dashboard at `/swagger-ui`.

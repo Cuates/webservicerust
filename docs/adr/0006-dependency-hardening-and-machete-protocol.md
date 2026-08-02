@@ -15,7 +15,7 @@ In a multi-crate Rust monorepo, dependencies can easily become bloated as featur
 
 We will adopt `cargo-machete` as a mandatory dependency auditing tool across the entire `webservicerust` workspace.
 
-1. **Automated Auditing**: Developers must run `cargo make machete` locally (which wraps the standard tool via our `Makefile.toml`) before submitting changes that modify crate manifests.
+1. **Automated Auditing**: Developers must run `cargo make machete` locally (which wraps the standard tool via our `Makefile.toml`) before submitting changes that modify crate manifests. This is now strictly enforced as part of the broader pre-commit hygiene pipeline.
 2. **CI Enforcement**: The continuous integration pipeline (`newsfeed-ci.yml`) executes `cargo-machete` against all workspace crates. Any detected unused dependency fails the CI build immediately.
 3. **Zero Unused Crates Policy**: Every crate listed in `[dependencies]`, `[dev-dependencies]`, or `[build-dependencies]` must be actively used in code.
 
