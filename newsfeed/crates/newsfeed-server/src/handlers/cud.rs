@@ -128,9 +128,10 @@ fn check_duplicates(items: &[newsfeed_models::CudParams]) -> Result<(), Validati
     let mut duplicates = Vec::new();
     for item in items {
         if let Some(ref title) = item.title
-            && !seen.insert(title.clone()) {
-                duplicates.push(title.clone());
-            }
+            && !seen.insert(title.clone())
+        {
+            duplicates.push(title.clone());
+        }
     }
     if duplicates.is_empty() {
         Ok(())

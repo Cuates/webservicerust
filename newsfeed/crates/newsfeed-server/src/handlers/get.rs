@@ -77,8 +77,20 @@ pub async fn handler(
                     ResponseMessage::PROCESSED,
                     rows,
                 );
-            let body_bytes = serde_json::to_vec(&response)
-                .expect("Serialization of owned response struct cannot fail");
+            let body_bytes = match serde_json::to_vec(&response) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to serialize GET response");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ApiErrorResponse::<()>::with_code(
+                            ResponseCode::INTERNAL_ERROR,
+                            "Internal Server Error".to_string(),
+                        )),
+                    )
+                        .into_response();
+                }
+            };
 
             let etag = if let Some(e) = db_etag {
                 e
