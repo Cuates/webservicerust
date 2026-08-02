@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-08-02
+
 ### Security
 - **Dependencies**: Ignored `RUSTSEC-2026-0098` (rustls-pemfile parsing) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
 - **Dependencies**: Ignored `RUSTSEC-2026-0099` (sct certificate timestamp) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
 - **Dependencies**: Ignored `RUSTSEC-2026-0104` (idna domain handling) in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
-- **Dependencies**: Ignored `RUSTSEC-2026-0221` in `cargo audit` due to unmaintained `tiberius` transitive dependencies.
+- **Dependencies**: Ignored `RUSTSEC-2026-0221` in `cargo audit` — `sqlx 0.8.6` transitively depends on `event-listener 5.4.1` (no fixed version available).
+
+### Changed
+- **Release**: Bumped workspace package version to `4.4.0`.
+- **Validation**: Executed pre-commit hygiene pipeline (`cargo make check`, `machete`, `fix`, `audit`, `test-coverage`).
+- **Dependencies**: Removed unused `serde` dependency from `newsfeed-db`.
+- **CI/CD**: Verified `newsfeed-ci.yml` strictly enforces `--all-features` in linting and leverages `--no-default-features --features <engine>` for test matrix isolation.
 
 ### Fixed
 - **ETag Caching**: Resolved a CI flake where `GET /api/v1/newsfeed` returned `200` instead of `304 Not Modified` under MariaDB when `max_modified_date` suffered a transient pool error. The `If-None-Match` comparison now also fires on the body-hash ETag fallback path, making cache validation resilient to intermittent DB connection hiccups on all three engines.

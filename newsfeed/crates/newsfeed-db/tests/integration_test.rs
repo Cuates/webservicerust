@@ -7,6 +7,7 @@
 
 use sqlx::Executor;
 use std::fs;
+use std::path::{MAIN_SEPARATOR, PathBuf};
 use std::time::Duration;
 use testcontainers::{GenericImage, RunnableImage, clients, core::WaitFor};
 use tiberius::{AuthMethod, Client, Config};
@@ -30,7 +31,7 @@ fn init_tracing_for_tests() {
 // Helper to run MSSQL scripts by splitting on GO
 async fn execute_mssql_script(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
-    script_path: &str,
+    script_path: std::path::PathBuf,
 ) {
     let script = fs::read_to_string(script_path).unwrap();
     let script = script.trim_start_matches('\u{feff}');
@@ -80,11 +81,11 @@ async fn test_postgres_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        api_keys: newsfeed_constants::test_constants::TEST_API_KEY_HEX.into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
-        timeout_standard_secs: 10,
-        timeout_cud_secs: 60,
+        timeout_standard_secs: newsfeed_constants::http::Timeouts::STANDARD_SECS,
+        timeout_cud_secs: newsfeed_constants::http::Timeouts::CUD_SECS,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::Postgres,
@@ -95,11 +96,11 @@ async fn test_postgres_integration() {
         mssql_database: None,
         mssql_username: None,
         mssql_password: None,
-        db_pool_min: 1,
-        db_pool_max: 2,
+        db_pool_min: newsfeed_constants::db::PoolDefaults::MIN_CONNECTIONS,
+        db_pool_max: newsfeed_constants::db::PoolDefaults::MAX_CONNECTIONS,
         db_mssql_encrypt: false,
         db_mssql_trust_cert: true,
-        db_acquire_timeout_secs: 5,
+        db_acquire_timeout_secs: newsfeed_constants::db::PoolDefaults::ACQUIRE_TIMEOUT_SECS,
     };
     let mut retries = 5;
     let mut app_state = None;
@@ -122,8 +123,11 @@ async fn test_postgres_integration() {
         _ => panic!("Expected postgres pool"),
     };
 
-    let schema =
-        fs::read_to_string("migrations/postgres/20260718000000_init_postgres.sql").unwrap();
+    let mut path = PathBuf::new();
+    path.push("migrations");
+    path.push("postgres");
+    path.push("20260718000000_init_postgres.sql");
+    let schema = fs::read_to_string(path).unwrap();
     let schema = schema.replace(
         "SELECT pg_catalog.set_config('search_path', '', false);",
         "SELECT pg_catalog.set_config('search_path', 'public', false);",
@@ -263,11 +267,11 @@ async fn test_mariadb_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        api_keys: newsfeed_constants::test_constants::TEST_API_KEY_HEX.into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
-        timeout_standard_secs: 10,
-        timeout_cud_secs: 60,
+        timeout_standard_secs: newsfeed_constants::http::Timeouts::STANDARD_SECS,
+        timeout_cud_secs: newsfeed_constants::http::Timeouts::CUD_SECS,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::MariaDb,
@@ -278,11 +282,11 @@ async fn test_mariadb_integration() {
         mssql_database: None,
         mssql_username: None,
         mssql_password: None,
-        db_pool_min: 1,
-        db_pool_max: 2,
+        db_pool_min: newsfeed_constants::db::PoolDefaults::MIN_CONNECTIONS,
+        db_pool_max: newsfeed_constants::db::PoolDefaults::MAX_CONNECTIONS,
         db_mssql_encrypt: false,
         db_mssql_trust_cert: true,
-        db_acquire_timeout_secs: 5,
+        db_acquire_timeout_secs: newsfeed_constants::db::PoolDefaults::ACQUIRE_TIMEOUT_SECS,
     };
     let mut retries = 5;
     let mut app_state = None;
@@ -306,7 +310,11 @@ async fn test_mariadb_integration() {
     };
 
     // Initialize schema
-    let schema = fs::read_to_string("migrations/mariadb/20260718000000_init_mariadb.sql").unwrap();
+    let mut path = PathBuf::new();
+    path.push("migrations");
+    path.push("mariadb");
+    path.push("20260718000000_init_mariadb.sql");
+    let schema = fs::read_to_string(path).unwrap();
     let schema = schema
         .trim_start_matches('\u{feff}')
         .replace("DEFINER=`gojeda`@`%`", "");
@@ -458,11 +466,11 @@ async fn test_mssql_integration() {
     }
     let mut client = client_res.expect("Failed to connect to mssql after retries");
 
-    execute_mssql_script(
-        &mut client,
-        "migrations/mssql/20260718000000_init_mssql.sql",
-    )
-    .await;
+    let mut path = PathBuf::new();
+    path.push("migrations");
+    path.push("mssql");
+    path.push("20260718000000_init_mssql.sql");
+    execute_mssql_script(&mut client, path).await;
 
     // We must use master or media DB? The init script creates `media` and then `USE media`.
     // Wait, the Tiberius connection is made to `master` by default. We need to create a connection pool for `media` after creation,
@@ -474,11 +482,11 @@ async fn test_mssql_integration() {
         allowed_origins: "*".into(),
         rate_limit_rps: 10,
         rate_limit_burst: 20,
-        api_keys: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        api_keys: newsfeed_constants::test_constants::TEST_API_KEY_HEX.into(),
         trust_proxy: false,
         trusted_proxy_cidr: Some("".to_string()),
-        timeout_standard_secs: 10,
-        timeout_cud_secs: 60,
+        timeout_standard_secs: newsfeed_constants::http::Timeouts::STANDARD_SECS,
+        timeout_cud_secs: newsfeed_constants::http::Timeouts::CUD_SECS,
     };
     let db_cfg = newsfeed_config::DatabaseConfig {
         database_target: newsfeed_config::DatabaseTarget::MsSql,
@@ -489,11 +497,11 @@ async fn test_mssql_integration() {
         mssql_database: Some(db),
         mssql_username: Some(user),
         mssql_password: Some(pass),
-        db_pool_min: 1,
-        db_pool_max: 2,
+        db_pool_min: newsfeed_constants::db::PoolDefaults::MIN_CONNECTIONS,
+        db_pool_max: newsfeed_constants::db::PoolDefaults::MAX_CONNECTIONS,
         db_mssql_encrypt: false,
         db_mssql_trust_cert: true,
-        db_acquire_timeout_secs: 5,
+        db_acquire_timeout_secs: newsfeed_constants::db::PoolDefaults::ACQUIRE_TIMEOUT_SECS,
     };
     let app_state = newsfeed_db::pool::AppState::init(&app_cfg, &db_cfg)
         .await

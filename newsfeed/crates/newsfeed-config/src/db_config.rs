@@ -2,6 +2,17 @@
 //! Only the configuration for the active `DATABASE_TARGET` needs to be set.
 
 use newsfeed_constants::db::DatabaseType;
+use thiserror::Error;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ConfigError {
+    #[error("DATABASE_TARGET=postgres but POSTGRES_URL is not set")]
+    PostgresUrlMissing,
+    #[error("DATABASE_TARGET=mariadb but MARIADB_URL is not set")]
+    MariaDbUrlMissing,
+    #[error("DATABASE_TARGET=mssql but the following env vars are not set: {0}")]
+    MsSqlMissingFields(String),
+}
 
 /// Which database engine the service routes to at runtime.
 /// Controlled by the `DATABASE_TARGET` environment variable.
@@ -66,19 +77,17 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     /// Validate that the required env vars for the active target are present.
     /// Panics with a descriptive message if any are missing.
-    pub fn validate(&self) {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         match self.database_target {
             DatabaseTarget::Postgres => {
-                assert!(
-                    self.postgres_url.is_some(),
-                    "DATABASE_TARGET=postgres but POSTGRES_URL is not set"
-                );
+                if self.postgres_url.is_none() {
+                    return Err(ConfigError::PostgresUrlMissing);
+                }
             }
             DatabaseTarget::MariaDb => {
-                assert!(
-                    self.mariadb_url.is_some(),
-                    "DATABASE_TARGET=mariadb but MARIADB_URL is not set"
-                );
+                if self.mariadb_url.is_none() {
+                    return Err(ConfigError::MariaDbUrlMissing);
+                }
             }
             DatabaseTarget::MsSql => {
                 let missing: Vec<&str> = [
@@ -91,13 +100,12 @@ impl DatabaseConfig {
                 .filter_map(|(name, absent)| if *absent { Some(*name) } else { None })
                 .collect();
 
-                assert!(
-                    missing.is_empty(),
-                    "DATABASE_TARGET=mssql but the following env vars are not set: {}",
-                    missing.join(", ")
-                );
+                if !missing.is_empty() {
+                    return Err(ConfigError::MsSqlMissingFields(missing.join(", ")));
+                }
             }
         }
+        Ok(())
     }
 }
 
@@ -140,13 +148,13 @@ fn default_true() -> bool {
     true
 }
 fn default_pool_max() -> u32 {
-    10
+    newsfeed_constants::db::PoolDefaults::MAX_CONNECTIONS
 }
 fn default_pool_min() -> u32 {
-    2
+    newsfeed_constants::db::PoolDefaults::MIN_CONNECTIONS
 }
 fn default_acquire_timeout() -> u64 {
-    5
+    newsfeed_constants::db::PoolDefaults::ACQUIRE_TIMEOUT_SECS
 }
 
 #[cfg(test)]
@@ -178,14 +186,13 @@ mod tests {
             postgres_url: Some("postgres://user:pass@localhost/db".to_owned()),
             ..base_config(DatabaseType::Postgres)
         };
-        cfg.validate(); // Must not panic.
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]
-    #[should_panic(expected = "POSTGRES_URL is not set")]
     fn test_validate_postgres_missing_url() {
         let cfg = base_config(DatabaseType::Postgres);
-        cfg.validate();
+        assert_eq!(cfg.validate(), Err(ConfigError::PostgresUrlMissing));
     }
 
     #[test]
@@ -194,14 +201,13 @@ mod tests {
             mariadb_url: Some("mysql://user:pass@localhost/db".to_owned()),
             ..base_config(DatabaseType::MariaDb)
         };
-        cfg.validate(); // Must not panic.
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]
-    #[should_panic(expected = "MARIADB_URL is not set")]
     fn test_validate_mariadb_missing_url() {
         let cfg = base_config(DatabaseType::MariaDb);
-        cfg.validate();
+        assert_eq!(cfg.validate(), Err(ConfigError::MariaDbUrlMissing));
     }
 
     #[test]
@@ -214,14 +220,16 @@ mod tests {
             mssql_password: Some("Password123!".to_owned()),
             ..base_config(DatabaseType::MsSql)
         };
-        cfg.validate(); // Must not panic.
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]
-    #[should_panic(expected = "the following env vars are not set")]
     fn test_validate_mssql_missing_fields() {
         let cfg = base_config(DatabaseType::MsSql);
-        cfg.validate();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::MsSqlMissingFields(fields) if fields.contains("MSSQL_HOST"))
+        );
     }
 
     #[test]

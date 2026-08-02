@@ -19,3 +19,9 @@ tokio        = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+default = ["postgres", "mariadb", "mssql"]
+postgres = ["newsfeed-db/postgres"]
+mariadb = ["newsfeed-db/mariadb"]
+mssql = ["newsfeed-db/mssql"]

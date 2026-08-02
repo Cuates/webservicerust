@@ -61,6 +61,24 @@ impl DatabasePort {
     pub const MSSQL: u16 = 1433;
 }
 
+// ── Connection heuristics ─────────────────────────────────────────────────────
+
+/// Heuristic: require 1 pool connection per N requests-per-second.
+/// At RPS=100, this requires at least 10 pool connections.
+pub const POOL_CONNECTIONS_PER_RPS: u32 = 10;
+
+// ── DB Timeouts & Pool defaults ──────────────────────────────────────────────
+
+pub struct PoolDefaults;
+
+impl PoolDefaults {
+    pub const MIN_CONNECTIONS: u32 = 2;
+    pub const MAX_CONNECTIONS: u32 = 10;
+    pub const ACQUIRE_TIMEOUT_SECS: u64 = 5;
+    pub const IDLE_TIMEOUT_MINS: u64 = 5;
+    pub const MAX_LIFETIME_MINS: u64 = 30;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +103,10 @@ mod tests {
         assert_eq!(DatabasePort::MARIADB, 3306);
         assert_eq!(DatabasePort::POSTGRES, 5432);
         assert_eq!(DatabasePort::MSSQL, 1433);
+    }
+
+    #[test]
+    fn test_pool_connections_per_rps() {
+        assert_eq!(POOL_CONNECTIONS_PER_RPS, 10);
     }
 }

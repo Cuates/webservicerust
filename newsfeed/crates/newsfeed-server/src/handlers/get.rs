@@ -10,7 +10,7 @@ use axum::{
 };
 use newsfeed_constants::http::{ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
-use newsfeed_models::{ApiResponse, ExtractParams};
+use newsfeed_models::{ApiErrorResponse, ApiResponse, ExtractParams, NewsFeedRow};
 use newsfeed_service::extract_feed;
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ use std::sync::Arc;
         newsfeed_models::ExtractParams
     ),
     responses(
-        (status = 200, description = "List of newsfeed items", body = ApiResponse<serde_json::Value>)
+        (status = 200, description = "List of newsfeed items", body = ApiResponse<NewsFeedRow>)
     )
 )]
 #[allow(clippy::implicit_hasher)]
@@ -38,7 +38,7 @@ pub async fn handler(
     if let Err(e) = validate_headers(&headers, false) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<serde_json::Value>::error_with_code(
+            Json(ApiErrorResponse::<()>::with_code(
                 ResponseCode::INVALID_HEADER,
                 e.to_string(),
             )),
@@ -72,8 +72,13 @@ pub async fn handler(
     // ── 4. Execute extract ────────────────────────────────────────────────────
     match extract_feed(&state, &params).await {
         Ok(rows) => {
-            let response = ApiResponse::success(ResponseMessage::PROCESSED, rows);
-            let body_bytes = serde_json::to_vec(&response).unwrap_or_default();
+            let response =
+                ApiResponse::<newsfeed_models::NewsFeedRow, newsfeed_models::NewsFeedRow>::success(
+                    ResponseMessage::PROCESSED,
+                    rows,
+                );
+            let body_bytes = serde_json::to_vec(&response)
+                .expect("Serialization of owned response struct cannot fail");
 
             let etag = if let Some(e) = db_etag {
                 e
@@ -111,7 +116,7 @@ pub async fn handler(
             tracing::error!(error = %e, "GET /api/newsfeed database error");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<serde_json::Value>::error_with_code(
+                Json(ApiErrorResponse::<()>::with_code(
                     ResponseCode::DB_ERROR,
                     "Internal Server Error".to_string(),
                 )),

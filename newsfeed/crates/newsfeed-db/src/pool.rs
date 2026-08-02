@@ -10,6 +10,7 @@ use crate::error::DbError;
 //  MSSQL pool type alias
 
 /// Type alias for the bb8-managed MSSQL connection pool.
+#[cfg(feature = "mssql")]
 pub type MssqlPool = bb8::Pool<bb8_tiberius::ConnectionManager>;
 
 //  Active database pool
@@ -17,29 +18,45 @@ pub type MssqlPool = bb8::Pool<bb8_tiberius::ConnectionManager>;
 /// Holds the single active database pool for the configured `DATABASE_TARGET`.
 #[derive(Debug)]
 pub enum DbPool {
+    #[cfg(feature = "postgres")]
     Postgres(sqlx::PgPool),
+    #[cfg(feature = "mariadb")]
     MariaDb(sqlx::MySqlPool),
+    #[cfg(feature = "mssql")]
     MsSql(MssqlPool),
 }
 
 impl DbPool {
     /// Ping the active database pool to verify connectivity.
-    pub async fn ping(&self) -> Result<(), String> {
+    pub async fn ping(&self) -> Result<(), DbError> {
         match self {
+            #[cfg(feature = "postgres")]
             #[rustfmt::skip]
-            DbPool::Postgres(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(|e| e.to_string()),
+            DbPool::Postgres(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(DbError::Sqlx),
+            #[cfg(feature = "mariadb")]
             #[rustfmt::skip]
-            DbPool::MariaDb(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(|e| e.to_string()),
-            #[rustfmt::skip]
-            DbPool::MsSql(pool) => pool.get().await.map(|_| ()).map_err(|e| e.to_string()),
+            DbPool::MariaDb(p) => sqlx::query("SELECT 1").execute(p).await.map(|_| ()).map_err(DbError::Sqlx),
+            #[cfg(feature = "mssql")]
+            DbPool::MsSql(pool) => {
+                let mut conn = pool.get().await?;
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                tiberius::Query::new("SELECT 1")
+                    .query(&mut *conn)
+                    .await
+                    .map(|_| ())
+                    .map_err(DbError::Tiberius)
+            }
         }
     }
 
     /// Gracefully close the database pool connections.
     pub async fn close(&self) {
         match self {
+            #[cfg(feature = "postgres")]
             DbPool::Postgres(p) => p.close().await,
+            #[cfg(feature = "mariadb")]
             DbPool::MariaDb(p) => p.close().await,
+            #[cfg(feature = "mssql")]
             DbPool::MsSql(_) => {} // bb8 handles this on drop
         }
     }
@@ -70,8 +87,9 @@ impl AppState {
     #[allow(clippy::too_many_lines)]
     pub async fn init(app_cfg: &AppConfig, db_cfg: &DatabaseConfig) -> Result<Self, DbError> {
         //  Startup guard: refuse to start with zero API keys
-        let required_pool_size =
-            (u32::try_from(app_cfg.rate_limit_rps).unwrap_or(u32::MAX) / 10).max(1);
+        let required_pool_size = (u32::try_from(app_cfg.rate_limit_rps).unwrap_or(u32::MAX)
+            / newsfeed_constants::db::POOL_CONNECTIONS_PER_RPS)
+            .max(1);
         if db_cfg.db_pool_max < required_pool_size {
             #[rustfmt::skip]
             return Err(DbError::Config(format!("Boot-time assertion failed: DB_POOL_MAX ({}) is dangerously low compared to RATE_LIMIT_RPS ({}). Must be >= {} to prevent thread starvation.", db_cfg.db_pool_max, app_cfg.rate_limit_rps, required_pool_size)));
@@ -98,92 +116,122 @@ impl AppState {
 
         let db = match db_cfg.database_target {
             DatabaseTarget::Postgres => {
-                #[rustfmt::skip]
-                let url = db_cfg.postgres_url.as_deref().ok_or_else(|| DbError::Config("POSTGRES_URL not set".into()))?;
-                let pool = sqlx::postgres::PgPoolOptions::new()
-                    .max_connections(db_cfg.db_pool_max)
-                    .min_connections(db_cfg.db_pool_min)
-                    .acquire_timeout(acquire_timeout)
-                    .idle_timeout(Duration::from_mins(5))
-                    // `test_before_acquire` adds a round-trip query (e.g. SELECT 1) before
-                    // handing out every pooled connection. With `max_lifetime` and `idle_timeout`
-                    // expiring stale connections, this extra overhead is unnecessary.
-                    .max_lifetime(Duration::from_mins(30))
-                    .connect(url)
-                    .await?;
-                tracing::info!(
-                    max_connections = db_cfg.db_pool_max,
-                    min_connections = db_cfg.db_pool_min,
-                    "Connected to PostgreSQL"
-                );
-                DbPool::Postgres(pool)
+                #[cfg(feature = "postgres")]
+                {
+                    #[rustfmt::skip]
+                    let url = db_cfg.postgres_url.as_deref().ok_or_else(|| DbError::Config("POSTGRES_URL not set".into()))?;
+                    let pool = sqlx::postgres::PgPoolOptions::new()
+                        .max_connections(db_cfg.db_pool_max)
+                        .min_connections(db_cfg.db_pool_min)
+                        .acquire_timeout(acquire_timeout)
+                        .idle_timeout(Duration::from_mins(
+                            newsfeed_constants::db::PoolDefaults::IDLE_TIMEOUT_MINS,
+                        ))
+                        .max_lifetime(Duration::from_mins(
+                            newsfeed_constants::db::PoolDefaults::MAX_LIFETIME_MINS,
+                        ))
+                        .connect(url)
+                        .await?;
+                    tracing::info!(
+                        max_connections = db_cfg.db_pool_max,
+                        min_connections = db_cfg.db_pool_min,
+                        "Connected to Postgres"
+                    );
+                    DbPool::Postgres(pool)
+                }
+                #[cfg(not(feature = "postgres"))]
+                return Err(DbError::Config(
+                    "Configured database target Postgres is not enabled in this build".into(),
+                ));
             }
             DatabaseTarget::MariaDb => {
-                #[rustfmt::skip]
-                let url = db_cfg.mariadb_url.as_deref().ok_or_else(|| DbError::Config("MARIADB_URL not set".into()))?;
-                let pool = sqlx::mysql::MySqlPoolOptions::new()
-                    .max_connections(db_cfg.db_pool_max)
-                    .min_connections(db_cfg.db_pool_min)
-                    .acquire_timeout(acquire_timeout)
-                    .idle_timeout(Duration::from_mins(5))
-                    // `test_before_acquire` adds a round-trip query (e.g. SELECT 1) before
-                    // handing out every pooled connection. With `max_lifetime` and `idle_timeout`
-                    // expiring stale connections, this extra overhead is unnecessary.
-                    .max_lifetime(Duration::from_mins(30))
-                    .connect(url)
-                    .await?;
-                tracing::info!(
-                    max_connections = db_cfg.db_pool_max,
-                    min_connections = db_cfg.db_pool_min,
-                    "Connected to MariaDB"
-                );
-                DbPool::MariaDb(pool)
+                #[cfg(feature = "mariadb")]
+                {
+                    #[rustfmt::skip]
+                    let url = db_cfg.mariadb_url.as_deref().ok_or_else(|| DbError::Config("MARIADB_URL not set".into()))?;
+                    let pool = sqlx::mysql::MySqlPoolOptions::new()
+                        .max_connections(db_cfg.db_pool_max)
+                        .min_connections(db_cfg.db_pool_min)
+                        .acquire_timeout(acquire_timeout)
+                        .idle_timeout(Duration::from_mins(5))
+                        .max_lifetime(Duration::from_mins(30))
+                        .connect(url)
+                        .await?;
+                    tracing::info!(
+                        max_connections = db_cfg.db_pool_max,
+                        min_connections = db_cfg.db_pool_min,
+                        "Connected to MariaDB"
+                    );
+                    DbPool::MariaDb(pool)
+                }
+                #[cfg(not(feature = "mariadb"))]
+                return Err(DbError::Config(
+                    "Configured database target MariaDb is not enabled in this build".into(),
+                ));
             }
             DatabaseTarget::MsSql => {
-                pub fn create_mssql_config(
-                    db_cfg: &DatabaseConfig,
-                ) -> Result<tiberius::Config, DbError> {
-                    let mut config = tiberius::Config::new();
-                    #[rustfmt::skip]
-                    config.host(db_cfg.mssql_host.as_deref().ok_or_else(|| DbError::Config("MSSQL_HOST not set".into()))?);
-                    config.port(db_cfg.mssql_port.unwrap_or(1433));
-                    config.database(
-                        db_cfg
-                            .mssql_database
-                            .as_deref()
-                            .ok_or_else(|| DbError::Config("MSSQL_DATABASE not set".into()))?,
-                    );
-                    config.authentication(tiberius::AuthMethod::sql_server(
-                        db_cfg
-                            .mssql_username
-                            .as_deref()
-                            .ok_or_else(|| DbError::Config("MSSQL_USERNAME not set".into()))?,
-                        db_cfg
-                            .mssql_password
-                            .as_deref()
-                            .ok_or_else(|| DbError::Config("MSSQL_PASSWORD not set".into()))?,
-                    ));
-                    config.encryption(if db_cfg.db_mssql_encrypt {
-                        tiberius::EncryptionLevel::Required
-                    } else {
-                        tiberius::EncryptionLevel::NotSupported
-                    });
-                    if db_cfg.db_mssql_trust_cert {
-                        config.trust_cert();
+                #[cfg(feature = "mssql")]
+                {
+                    pub fn create_mssql_config(
+                        db_cfg: &DatabaseConfig,
+                    ) -> Result<tiberius::Config, DbError> {
+                        let mut config = tiberius::Config::new();
+                        #[rustfmt::skip]
+                        config.host(db_cfg.mssql_host.as_deref().ok_or_else(|| DbError::Config("MSSQL_HOST not set".into()))?);
+                        config.port(db_cfg.mssql_port.unwrap_or(1433));
+                        config.database(
+                            db_cfg
+                                .mssql_database
+                                .as_deref()
+                                .ok_or_else(|| DbError::Config("MSSQL_DATABASE not set".into()))?,
+                        );
+                        config.authentication(tiberius::AuthMethod::sql_server(
+                            db_cfg
+                                .mssql_username
+                                .as_deref()
+                                .ok_or_else(|| DbError::Config("MSSQL_USERNAME not set".into()))?,
+                            db_cfg
+                                .mssql_password
+                                .as_deref()
+                                .ok_or_else(|| DbError::Config("MSSQL_PASSWORD not set".into()))?,
+                        ));
+                        config.encryption(if db_cfg.db_mssql_encrypt {
+                            tiberius::EncryptionLevel::Required
+                        } else {
+                            tiberius::EncryptionLevel::NotSupported
+                        });
+                        if db_cfg.db_mssql_trust_cert {
+                            config.trust_cert();
+                        }
+                        Ok(config)
                     }
-                    Ok(config)
+
+                    let mssql_config = create_mssql_config(db_cfg)?;
+                    let mgr = bb8_tiberius::ConnectionManager::new(mssql_config);
+                    let pool = bb8::Pool::builder()
+                        .max_size(db_cfg.db_pool_max)
+                        .min_idle(Some(db_cfg.db_pool_min))
+                        .connection_timeout(acquire_timeout)
+                        .idle_timeout(Some(Duration::from_mins(
+                            newsfeed_constants::db::PoolDefaults::IDLE_TIMEOUT_MINS,
+                        )))
+                        .max_lifetime(Some(Duration::from_mins(
+                            newsfeed_constants::db::PoolDefaults::MAX_LIFETIME_MINS,
+                        )))
+                        .build(mgr)
+                        .await
+                        .map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
+
+                    tracing::info!(
+                        max_connections = db_cfg.db_pool_max,
+                        "Connected to MSSQL via bb8-tiberius pool"
+                    );
+                    DbPool::MsSql(pool)
                 }
-
-                let mssql_config = create_mssql_config(db_cfg)?;
-                let mgr = bb8_tiberius::ConnectionManager::new(mssql_config);
-                #[rustfmt::skip]
-                let pool = bb8::Pool::builder().max_size(db_cfg.db_pool_max).min_idle(Some(db_cfg.db_pool_min)).connection_timeout(acquire_timeout).idle_timeout(Some(Duration::from_mins(5))).max_lifetime(Some(Duration::from_mins(30))).build(mgr).await.map_err(|e| DbError::Config(format!("MSSQL pool build error: {e}")))?;
-
-                tracing::info!(
-                    max_connections = db_cfg.db_pool_max,
-                    "Connected to MSSQL via bb8-tiberius pool"
-                );
-                DbPool::MsSql(pool)
+                #[cfg(not(feature = "mssql"))]
+                return Err(DbError::Config(
+                    "Configured database target MsSql is not enabled in this build".into(),
+                ));
             }
         };
 
@@ -315,6 +363,7 @@ mod tests {
     //  DbPool::ping error paths
 
     /// Postgres lazy pool — ping must fail (no real server behind fake URL).
+    #[cfg(feature = "postgres")]
     #[tokio::test]
     async fn test_ping_postgres_fails_on_fake_pool() {
         #[rustfmt::skip]
@@ -325,6 +374,7 @@ mod tests {
     }
 
     /// MariaDB lazy pool — ping must fail (no real server behind fake URL).
+    #[cfg(feature = "mariadb")]
     #[tokio::test]
     async fn test_ping_mariadb_fails_on_fake_pool() {
         #[rustfmt::skip]
@@ -335,6 +385,7 @@ mod tests {
     }
 
     /// MSSQL bb8 pool — ping must fail (non-routable address with 1 ms timeout).
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_ping_mssql_fails_on_fake_pool() {
         let mut cfg = tiberius::Config::new();
@@ -456,6 +507,7 @@ mod tests {
         let _ = result.unwrap_err();
     }
 
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_init_mssql_connection_failure() {
         let app_cfg =
@@ -477,6 +529,7 @@ mod tests {
         assert!(matches!(err, DbError::Config(msg) if msg.contains("MSSQL pool build error")));
     }
 
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_init_mssql_encryption_and_trust() {
         let app_cfg = postgres_app_cfg("test_key");
@@ -500,24 +553,30 @@ mod tests {
     }
     #[tokio::test]
     async fn test_pool_close() {
-        // Create fake DbPools and just call close on them. It shouldn't panic.
-        // It's hard to assert state changes on close without real connections,
-        // but this provides line coverage for the close() match branches.
-        let pg_pool = sqlx::postgres::PgPoolOptions::new()
-            .connect_lazy("postgres://fake:5432")
-            .unwrap();
-        let db_pg = DbPool::Postgres(pg_pool);
-        db_pg.close().await;
+        #[cfg(feature = "postgres")]
+        {
+            let pg_pool = sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://fake:5432")
+                .unwrap();
+            let db_pg = DbPool::Postgres(pg_pool);
+            db_pg.close().await;
+        }
 
-        let my_pool = sqlx::mysql::MySqlPoolOptions::new()
-            .connect_lazy("mysql://fake:3306")
-            .unwrap();
-        let db_my = DbPool::MariaDb(my_pool);
-        db_my.close().await;
+        #[cfg(feature = "mariadb")]
+        {
+            let my_pool = sqlx::mysql::MySqlPoolOptions::new()
+                .connect_lazy("mysql://fake:3306")
+                .unwrap();
+            let db_my = DbPool::MariaDb(my_pool);
+            db_my.close().await;
+        }
 
-        let bb8_mgr = bb8_tiberius::ConnectionManager::build(tiberius::Config::new()).unwrap();
-        let ms_pool = bb8::Pool::builder().build_unchecked(bb8_mgr);
-        let db_ms = DbPool::MsSql(ms_pool);
-        db_ms.close().await;
+        #[cfg(feature = "mssql")]
+        {
+            let bb8_mgr = bb8_tiberius::ConnectionManager::build(tiberius::Config::new()).unwrap();
+            let ms_pool = bb8::Pool::builder().build_unchecked(bb8_mgr);
+            let db_ms = DbPool::MsSql(ms_pool);
+            db_ms.close().await;
+        }
     }
 }

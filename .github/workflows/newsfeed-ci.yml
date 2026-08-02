@@ -58,17 +58,17 @@ jobs:
           # RUSTSEC-2026-0099: sct certificate timestamp advisory (transitive via tiberius 0.12)
           # RUSTSEC-2026-0104: idna domain name handling advisory (transitive via tiberius 0.12 / older url)
           # RUSTSEC-2025-0134: rustls 0.21 TLS stack advisory (transitive via tiberius 0.12)
-          # RUSTSEC-2026-0221: (undocumented in comments previously)
+          # RUSTSEC-2026-0221: h2 transient bug via axum (awaiting upstream hyper release)
           cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2026-0221
 
       - name: Cargo Check
-        run: cargo check --workspace
+        run: cargo check --workspace --all-features
 
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
       - name: Run Unit Tests
-        run: cargo test --workspace --lib --bins -- --include-ignored
+        run: cargo test --workspace --all-features --lib --bins -- --include-ignored
 
   integration-test:
     name: Integration Tests (${{ matrix.database_target }})
@@ -95,4 +95,4 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run Integration Tests & Enforce Coverage
-        run: cargo llvm-cov --workspace --all-features --ignore-filename-regex ".*(main|gen_openapi|shutdown)\.rs" --fail-under-lines 99 --fail-under-functions 99 -- --include-ignored
+        run: cargo llvm-cov --workspace --no-default-features --features ${{ matrix.database_target }} --ignore-filename-regex ".*(main|gen_openapi|shutdown)\.rs" --fail-under-lines 99 --fail-under-functions 99 -- --include-ignored

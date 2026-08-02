@@ -8,6 +8,7 @@ This guide explains how to set up the Newsfeed web service for local development
 - **Rust Toolchain**: Install via [rustup](https://rustup.rs/). The project requires Rust `1.97.1` or later.
 - **Docker**: Required by `testcontainers` to dynamically provision databases during automated tests, or for running manual test databases.
 - **A Target Database**: PostgreSQL, MariaDB, or MSSQL.
+- **`cargo-make`**: The primary task runner for the workspace. Install globally via `cargo install cargo-make`.
 - **`cargo-llvm-cov`** *(Optional)*: Required only if you want to generate code coverage reports. Install globally via `cargo install cargo-llvm-cov`.
 - **`cargo-machete`** *(Optional)*: Required if you want to audit and prune unused crate dependencies locally. Install globally via `cargo install cargo-machete`.
 

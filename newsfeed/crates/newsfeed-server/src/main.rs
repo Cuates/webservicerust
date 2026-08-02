@@ -58,8 +58,9 @@ async fn main() {
     let db_cfg: DatabaseConfig = envy::from_env()
         .expect("DatabaseConfig error: check DATABASE_TARGET and the corresponding DB env vars");
 
-    // Validate that required DB env vars are present for the active target.
-    db_cfg.validate();
+    db_cfg
+        .validate()
+        .expect("Database config validation failed");
 
     // ── 3. Initialise tracing (ONCE) ─────────────────────────────────────────
     init_tracing(&app_cfg.rust_log);
@@ -80,7 +81,9 @@ async fn main() {
     // ── 4.5. Spawn DB Health Watcher ──────────────────────────────────────────
     let state_clone = Arc::clone(&state);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+            newsfeed_constants::server::Timeouts::HEALTH_CHECK_SECS,
+        ));
         loop {
             interval.tick().await;
             let healthy = match state_clone.db.ping().await {

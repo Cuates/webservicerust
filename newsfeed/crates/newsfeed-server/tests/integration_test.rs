@@ -200,6 +200,42 @@ async fn test_cors_headers_on_get() {
 }
 
 #[tokio::test]
+async fn test_post_duplicate_titles_rejected() {
+    let server = create_test_server();
+    let valid_api_key = "nf_test_key_123";
+
+    let payload = serde_json::json!({
+        "items": [
+            { "title": "Dup Title", "feed_url": "http://example.com/1" },
+            { "title": "Dup Title", "feed_url": "http://example.com/2" }
+        ]
+    });
+
+    let response = server
+        .post("/api/v1/newsfeed")
+        .add_header(
+            axum::http::header::HeaderName::from_static("x-api-key"),
+            axum::http::header::HeaderValue::from_static(valid_api_key),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("content-type"),
+            axum::http::header::HeaderValue::from_static("application/json; charset=utf-8"),
+        )
+        .add_header(
+            axum::http::header::HeaderName::from_static("accept"),
+            axum::http::header::HeaderValue::from_static("application/json"),
+        )
+        .bytes(axum::body::Bytes::from(
+            serde_json::to_vec(&payload).unwrap(),
+        ))
+        .await;
+
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error_body: serde_json::Value = response.json();
+    assert_eq!(error_body["Code"], "DUPLICATE_TITLES");
+}
+
+#[tokio::test]
 async fn test_rate_limiting() {
     let valid_api_key = "nf_test_key_123";
 
@@ -1296,7 +1332,7 @@ async fn test_db_partial_failure() {
                     "publish_date": "2026-07-23T00:00:00Z"
                 },
                 {
-                    "title": "Duplicate Title",
+                    "title": "Another Title",
                     "feed_url": "http://example.com/feed2",
                     "publish_date": "2026-07-23T01:00:00Z"
                 }
@@ -1546,7 +1582,7 @@ async fn test_not_found_handler_structure() {
     assert_eq!(body["Code"], "ERROR");
     assert_eq!(body["Message"], "Not Found");
     assert_eq!(body["Count"], 0);
-    assert_eq!(body["Result"].as_array().unwrap().len(), 0);
+    assert!(body.get("Result").is_none());
 }
 
 #[tokio::test]
@@ -1965,4 +2001,57 @@ async fn test_options_preflight() {
 
     let allow_origin = response.header(&axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN);
     assert_eq!(allow_origin.to_str().unwrap(), "http://localhost");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_db_concurrent_inserts() {
+    let docker = testcontainers::clients::Cli::default();
+    let (state, _node) = create_live_state(&docker).await;
+
+    let time_nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let title = format!("Concurrent Title {}", time_nanos);
+    let mut set = tokio::task::JoinSet::new();
+
+    for _ in 0..10 {
+        let state_clone = Arc::clone(&state);
+        let t = title.clone();
+        set.spawn(async move {
+            let item = newsfeed_models::CudParams {
+                title: Some(t),
+                feed_url: Some("http://concurrent.com".to_string()),
+                publish_date: Some("2026-07-26T12:00:00Z".to_string()),
+                ..Default::default()
+            };
+            newsfeed_service::cud_feed(
+                &state_clone,
+                newsfeed_constants::db::OptionMode::InsertFeed,
+                &[item],
+            )
+            .await
+        });
+    }
+
+    let mut successes = 0;
+    let mut skipped = 0;
+    let mut errors = 0;
+
+    while let Some(res) = set.join_next().await {
+        let db_res_list = res.expect("Task panicked").expect("DB error");
+        assert_eq!(db_res_list.len(), 1);
+        match db_res_list[0].status {
+            newsfeed_db::CudStatus::Success => successes += 1,
+            newsfeed_db::CudStatus::Skipped => skipped += 1,
+            newsfeed_db::CudStatus::Error => errors += 1,
+        }
+    }
+
+    assert_eq!(errors, 0, "Expected zero database errors");
+    assert_eq!(successes, 1, "Expected exactly one insert to succeed");
+    assert_eq!(
+        skipped, 9,
+        "Expected exactly 9 inserts to be skipped due to conflicts"
+    );
 }

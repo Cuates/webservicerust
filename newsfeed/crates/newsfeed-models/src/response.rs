@@ -5,13 +5,17 @@ use utoipa::ToSchema;
 
 /// Represents a single item that failed during a batch operation.
 #[derive(Debug, Serialize, ToSchema, Clone)]
-pub struct FailedItem {
+pub struct FailedItem<T: Serialize> {
     #[serde(rename = "Item")]
-    pub item: serde_json::Value,
+    pub item: T,
 
     #[serde(rename = "Reason")]
     pub reason: String,
 }
+
+/// A dummy payload for responses that have no specific failed item type.
+#[derive(Debug, Serialize, ToSchema, Clone)]
+pub struct EmptyPayload {}
 
 /// Generic API response envelope matching the Python reference format.
 ///
@@ -21,7 +25,7 @@ pub struct FailedItem {
 /// The `Code` field provides a machine-readable error/success code for clients
 /// that need to distinguish error types programmatically.
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponse<T: Serialize> {
+pub struct ApiResponse<T: Serialize, F: Serialize = T> {
     #[serde(rename = "Status")]
     pub status: String,
 
@@ -38,10 +42,60 @@ pub struct ApiResponse<T: Serialize> {
     pub result: Vec<T>,
 
     #[serde(rename = "FailedItems", skip_serializing_if = "Vec::is_empty", default)]
-    pub failed_items: Vec<FailedItem>,
+    pub failed_items: Vec<FailedItem<F>>,
 }
 
-impl<T: Serialize> ApiResponse<T> {
+/// Error API response envelope (no result list).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiErrorResponse<F: Serialize = EmptyPayload> {
+    #[serde(rename = "Status")]
+    pub status: String,
+
+    #[serde(rename = "Code")]
+    pub code: String,
+
+    #[serde(rename = "Message")]
+    pub message: String,
+
+    #[serde(rename = "Count")]
+    pub count: usize,
+
+    #[serde(rename = "FailedItems", skip_serializing_if = "Vec::is_empty", default)]
+    pub failed_items: Vec<FailedItem<F>>,
+}
+
+impl<F: Serialize> ApiErrorResponse<F> {
+    /// Construct an error response.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            status: "Error".to_owned(),
+            code: "ERROR".to_owned(),
+            message: message.into(),
+            count: 0,
+            failed_items: vec![],
+        }
+    }
+
+    /// Construct an error response with a specific machine-readable code.
+    pub fn with_code(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            status: "Error".to_owned(),
+            code: code.into(),
+            message: message.into(),
+            count: 0,
+            failed_items: vec![],
+        }
+    }
+
+    /// Attach failed items to the response.
+    #[must_use]
+    pub fn with_failed_items(mut self, failed: Vec<FailedItem<F>>) -> Self {
+        self.failed_items = failed;
+        self
+    }
+}
+
+impl<T: Serialize, F: Serialize> ApiResponse<T, F> {
     /// Construct a success response.
     pub fn success(message: impl Into<String>, result: Vec<T>) -> Self {
         let count = result.len();
@@ -55,26 +109,11 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 
-    /// Construct an error response with an empty result list.
-    ///
-    /// Works for any `T: Serialize`, eliminating the need to specify
-    /// `ApiResponse::<serde_json::Value>::error(...)` at every call site.
-    pub fn error(message: impl Into<String>) -> ApiResponse<serde_json::Value> {
-        ApiResponse {
-            status: "Error".to_owned(),
-            code: "ERROR".to_owned(),
-            message: message.into(),
-            count: 0,
-            result: vec![],
-            failed_items: vec![],
-        }
-    }
-
     /// Construct a partial success response.
     pub fn partial(
         message: impl Into<String>,
         result: Vec<T>,
-        failed_items: Vec<FailedItem>,
+        failed_items: Vec<FailedItem<F>>,
     ) -> Self {
         let count = result.len();
         Self {
@@ -87,24 +126,9 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 
-    /// Construct an error response with a specific machine-readable code.
-    pub fn error_with_code(
-        code: impl Into<String>,
-        message: impl Into<String>,
-    ) -> ApiResponse<serde_json::Value> {
-        ApiResponse {
-            status: "Error".to_owned(),
-            code: code.into(),
-            message: message.into(),
-            count: 0,
-            result: vec![],
-            failed_items: vec![],
-        }
-    }
-
     /// Attach failed items to the response (for partial success/failure).
     #[must_use]
-    pub fn with_failed_items(mut self, failed: Vec<FailedItem>) -> Self {
+    pub fn with_failed_items(mut self, failed: Vec<FailedItem<F>>) -> Self {
         self.failed_items = failed;
         self
     }
@@ -118,7 +142,7 @@ mod tests {
     #[test]
     fn test_success_response_shape() {
         let items = vec![json!({"title": "Hello"})];
-        let resp = ApiResponse::success("All good", items);
+        let resp = ApiResponse::<serde_json::Value>::success("All good", items);
 
         let serialized = serde_json::to_value(&resp).unwrap();
         assert_eq!(serialized["Status"], "Success");
@@ -131,27 +155,25 @@ mod tests {
     #[test]
     fn test_success_response_count_matches_result_len() {
         let items: Vec<serde_json::Value> = vec![json!({}), json!({}), json!({})];
-        let resp = ApiResponse::success("ok", items);
+        let resp = ApiResponse::<serde_json::Value>::success("ok", items);
         assert_eq!(resp.count, 3);
     }
 
     #[test]
     fn test_error_response_shape() {
-        let resp = ApiResponse::<serde_json::Value>::error("something went wrong");
+        let resp = ApiErrorResponse::<EmptyPayload>::new("something went wrong");
         let serialized = serde_json::to_value(&resp).unwrap();
         assert_eq!(serialized["Status"], "Error");
         assert_eq!(serialized["Code"], "ERROR");
         assert_eq!(serialized["Message"], "something went wrong");
         assert_eq!(serialized["Count"], 0);
-        assert!(serialized["Result"].as_array().unwrap().is_empty());
+        assert!(serialized.get("Result").is_none());
     }
 
     #[test]
     fn test_error_with_code_response_shape() {
-        let resp = ApiResponse::<serde_json::Value>::error_with_code(
-            "VALIDATION_ERROR",
-            "title is required",
-        );
+        let resp =
+            ApiErrorResponse::<EmptyPayload>::with_code("VALIDATION_ERROR", "title is required");
         let serialized = serde_json::to_value(&resp).unwrap();
         assert_eq!(serialized["Status"], "Error");
         assert_eq!(serialized["Code"], "VALIDATION_ERROR");
@@ -162,12 +184,13 @@ mod tests {
 
     #[test]
     fn test_failed_items_inclusion() {
-        let resp = ApiResponse::<serde_json::Value>::error("partial fail").with_failed_items(vec![
-            FailedItem {
-                item: json!({"id": 1}),
-                reason: "duplicate".to_owned(),
-            },
-        ]);
+        let resp =
+            ApiErrorResponse::<serde_json::Value>::new("partial fail").with_failed_items(vec![
+                FailedItem {
+                    item: json!({"id": 1}),
+                    reason: "duplicate".to_owned(),
+                },
+            ]);
         let serialized = serde_json::to_value(&resp).unwrap();
         assert!(serialized.get("FailedItems").is_some());
         assert_eq!(serialized["FailedItems"][0]["Reason"], "duplicate");
@@ -175,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_api_response_partial_status_serialization() {
-        let mut resp = ApiResponse::success(
+        let mut resp = ApiResponse::<serde_json::Value>::success(
             "Partial batch success",
             vec![json!({"id": 2, "status": "ok"})],
         );
@@ -195,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_api_response_partial_constructor() {
-        let resp = ApiResponse::partial(
+        let resp = ApiResponse::<serde_json::Value>::partial(
             "Some failed",
             vec![json!({"id": 2})],
             vec![FailedItem {

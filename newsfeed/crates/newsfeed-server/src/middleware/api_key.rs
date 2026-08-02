@@ -25,7 +25,7 @@ use axum::{
 
 use newsfeed_constants::http::{HeaderType, ResponseCode, ResponseMessage};
 use newsfeed_db::pool::AppState;
-use newsfeed_models::ApiResponse;
+use newsfeed_models::ApiErrorResponse;
 
 /// Axum middleware function: validates `X-API-Key` on every request.
 pub async fn api_key_middleware(
@@ -53,7 +53,7 @@ pub async fn api_key_middleware(
         tracing::warn!("Unauthorized request — missing or invalid X-API-Key");
         (
             StatusCode::UNAUTHORIZED,
-            Json(ApiResponse::<serde_json::Value>::error_with_code(
+            Json(ApiErrorResponse::<()>::with_code(
                 ResponseCode::UNAUTHORIZED,
                 ResponseMessage::UNAUTHORIZED,
             )),

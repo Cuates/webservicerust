@@ -2,8 +2,15 @@
 
 use axum::http::HeaderMap;
 use newsfeed_constants::http::{HeaderType, PossibleHeaderType, ResponseCode};
-use newsfeed_models::{ApiResponse, CudParams};
+use newsfeed_models::{ApiErrorResponse, CudParams};
 use newsfeed_service::ServiceError;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ValidationError {
+    #[error("Duplicate title found in batch: {0}")]
+    DuplicateTitle(String),
+}
 
 pub use newsfeed_constants::db::OptionMode as Action;
 
@@ -60,23 +67,23 @@ pub fn validate_headers(headers: &HeaderMap, requires_body: bool) -> Result<(), 
 pub fn validate_required_fields(
     params: &CudParams,
     action: &Action,
-) -> Result<(), ApiResponse<serde_json::Value>> {
+) -> Result<(), ApiErrorResponse<()>> {
     match action {
         Action::InsertFeed => {
             if params.title.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: title",
                 ));
             }
             if params.feed_url.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: feed_url",
                 ));
             }
             if params.publish_date.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: publish_date",
                 ));
@@ -84,7 +91,7 @@ pub fn validate_required_fields(
         }
         Action::DeleteFeed => {
             if params.title.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: title",
                 ));
@@ -92,13 +99,13 @@ pub fn validate_required_fields(
         }
         Action::UpdateFeed => {
             if params.title.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: title",
                 ));
             }
             if params.publish_date.is_none() {
-                return Err(ApiResponse::<serde_json::Value>::error_with_code(
+                return Err(ApiErrorResponse::<()>::with_code(
                     ResponseCode::VALIDATION_ERROR,
                     "Missing mandatory parameter: publish_date",
                 ));

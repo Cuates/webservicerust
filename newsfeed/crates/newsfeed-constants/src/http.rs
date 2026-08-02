@@ -110,6 +110,15 @@ impl PossiblePayloadParams {
     pub const SORT: &'static str = "sort";
 }
 
+// ── HTTP Timeouts ──────────────────────────────────────────────────────────
+
+pub struct Timeouts;
+
+impl Timeouts {
+    pub const STANDARD_SECS: u64 = 10;
+    pub const CUD_SECS: u64 = 60;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

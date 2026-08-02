@@ -13,13 +13,15 @@ use newsfeed_constants::{
     db::OptionMode,
     http::{ResponseCode, ResponseMessage},
 };
-use newsfeed_db::{CudStatus, pool::AppState};
-use newsfeed_models::{ApiResponse, CudPayload, FailedItem};
+use newsfeed_db::pool::AppState;
+use newsfeed_models::{
+    ApiErrorResponse, ApiResponse, CudParams, CudPayload, CudResult, CudStatus, FailedItem,
+};
 use newsfeed_service::{ServiceError, cud_feed};
 
 use crate::{
     extractors::AppJson,
-    validation::{validate_headers, validate_required_fields},
+    validation::{ValidationError, validate_headers, validate_required_fields},
 };
 
 #[utoipa::path(
@@ -27,7 +29,7 @@ use crate::{
     path = "/api/v1/newsfeed",
     request_body = CudPayload,
     responses(
-        (status = 201, description = "Created newsfeed item", body = ApiResponse<serde_json::Value>)
+        (status = 201, description = "Created newsfeed item", body = ApiResponse<CudResult, CudParams>)
     )
 )]
 pub async fn post_handler(
@@ -43,7 +45,7 @@ pub async fn post_handler(
     path = "/api/v1/newsfeed",
     request_body = CudPayload,
     responses(
-        (status = 200, description = "Updated newsfeed item", body = ApiResponse<serde_json::Value>)
+        (status = 200, description = "Updated newsfeed item", body = ApiResponse<CudResult, CudParams>)
     )
 )]
 pub async fn put_handler(
@@ -59,7 +61,7 @@ pub async fn put_handler(
     path = "/api/v1/newsfeed",
     request_body = CudPayload,
     responses(
-        (status = 200, description = "Deleted newsfeed item", body = ApiResponse<serde_json::Value>)
+        (status = 200, description = "Deleted newsfeed item", body = ApiResponse<CudResult, CudParams>)
     )
 )]
 pub async fn delete_handler(
@@ -83,7 +85,21 @@ async fn process_cud(
             _ => StatusCode::BAD_REQUEST,
         };
         #[rustfmt::skip]
-        return (status, Json(ApiResponse::<serde_json::Value>::error_with_code(ResponseCode::INVALID_HEADER, e.to_string()))).into_response();
+        return (status, Json(ApiErrorResponse::<newsfeed_models::EmptyPayload>::with_code(ResponseCode::INVALID_HEADER, e.to_string()))).into_response();
+    }
+
+    // ── 1.5. Reject duplicate titles ──────────────────────────────────────────
+    if let Err(e) = check_duplicates(&body.items) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(
+                ApiErrorResponse::<newsfeed_models::EmptyPayload>::with_code(
+                    "DUPLICATE_TITLES",
+                    e.to_string(),
+                ),
+            ),
+        )
+            .into_response();
     }
 
     // ── 2. Validate required fields for each item ─────────────────────────────
@@ -99,7 +115,7 @@ async fn process_cud(
         Err(e) => {
             tracing::error!(error = %e, "CUD database error");
             #[rustfmt::skip]
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::<serde_json::Value>::error_with_code(ResponseCode::DB_ERROR, "Internal Server Error".to_string()))).into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiErrorResponse::<newsfeed_models::EmptyPayload>::with_code(ResponseCode::DB_ERROR, "Internal Server Error".to_string()))).into_response();
         }
     };
 
@@ -107,10 +123,23 @@ async fn process_cud(
     handle_cud_logic(results, option_mode)
 }
 
-fn handle_cud_logic(
-    results: Vec<newsfeed_db::CudResult>,
-    option_mode: OptionMode,
-) -> axum::response::Response {
+fn check_duplicates(items: &[newsfeed_models::CudParams]) -> Result<(), ValidationError> {
+    let mut seen = std::collections::HashSet::new();
+    let mut duplicates = Vec::new();
+    for item in items {
+        if let Some(ref title) = item.title
+            && !seen.insert(title.clone()) {
+                duplicates.push(title.clone());
+            }
+    }
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(ValidationError::DuplicateTitle(duplicates.join(", ")))
+    }
+}
+
+fn handle_cud_logic(results: Vec<CudResult>, option_mode: OptionMode) -> axum::response::Response {
     let all_skipped = results
         .iter()
         .all(|r| matches!(r.status, CudStatus::Skipped));
@@ -121,14 +150,15 @@ fn handle_cud_logic(
     for res in results {
         match res.status {
             CudStatus::Error => failed.push(FailedItem {
-                item: res.item.unwrap_or(serde_json::json!({})),
+                item: res.item.unwrap_or_else(CudParams::default),
                 reason: res.message,
             }),
             CudStatus::Success | CudStatus::Skipped => successes.push(res),
         }
     }
 
-    let response = if !successes.is_empty() && !failed.is_empty() {
+    let response: ApiResponse<CudResult, CudParams> = if !successes.is_empty() && !failed.is_empty()
+    {
         ApiResponse::partial(ResponseMessage::PARTIAL, successes, failed)
     } else {
         let mut resp = ApiResponse::success(ResponseMessage::PROCESSED, successes);
@@ -153,14 +183,56 @@ fn handle_cud_logic(
 mod tests {
     use super::*;
     use newsfeed_constants::db::OptionMode;
-    use newsfeed_db::{CudResult, CudStatus};
+
+    #[test]
+    fn test_check_duplicates_ok() {
+        let items = vec![
+            newsfeed_models::CudParams {
+                title: Some("1".to_string()),
+                ..Default::default()
+            },
+            newsfeed_models::CudParams {
+                title: Some("2".to_string()),
+                ..Default::default()
+            },
+            newsfeed_models::CudParams {
+                title: None,
+                ..Default::default()
+            },
+        ];
+        assert!(check_duplicates(&items).is_ok());
+    }
+
+    #[test]
+    fn test_check_duplicates_fails() {
+        let items = vec![
+            newsfeed_models::CudParams {
+                title: Some("1".to_string()),
+                ..Default::default()
+            },
+            newsfeed_models::CudParams {
+                title: Some("1".to_string()),
+                ..Default::default()
+            },
+            newsfeed_models::CudParams {
+                title: Some("2".to_string()),
+                ..Default::default()
+            },
+            newsfeed_models::CudParams {
+                title: Some("2".to_string()),
+                ..Default::default()
+            },
+        ];
+        let err = check_duplicates(&items).unwrap_err();
+        assert!(matches!(err, ValidationError::DuplicateTitle(t) if t == "1, 2"));
+    }
 
     #[test]
     fn test_handle_cud_logic_partial_failure() {
         #[rustfmt::skip]
         let results = vec![
-            CudResult { status: CudStatus::Success, message: "OK".to_string(), item: Some(serde_json::json!({"title": "1"})) },
-            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(serde_json::json!({"title": "2"})) },
+            CudResult { status: CudStatus::Success, message: "OK".to_string(), item: Some(CudParams { title: Some("1".to_string()), ..Default::default() }) },
+            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(CudParams { title: Some("2".to_string()), ..Default::default() }) },
         ];
 
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
@@ -172,7 +244,7 @@ mod tests {
     fn test_handle_cud_logic_all_failure() {
         #[rustfmt::skip]
         let results = vec![
-            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(serde_json::json!({"title": "2"})) },
+            CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: Some(CudParams { title: Some("2".to_string()), ..Default::default() }) },
             CudResult { status: CudStatus::Error, message: "Fail".to_string(), item: None },
         ];
 
@@ -184,7 +256,7 @@ mod tests {
     #[test]
     fn test_handle_cud_logic_all_skipped_insert() {
         #[rustfmt::skip]
-        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record already exists".to_string(), item: Some(serde_json::json!({"title": "1"})) }];
+        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record already exists".to_string(), item: Some(CudParams { title: Some("1".to_string()), ..Default::default() }) }];
 
         let res = handle_cud_logic(results, OptionMode::InsertFeed);
         // Insert with no errors and all skipped should be OK (200)
@@ -195,7 +267,7 @@ mod tests {
     #[test]
     fn test_handle_cud_logic_all_skipped_update() {
         #[rustfmt::skip]
-        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record does not exist".to_string(), item: Some(serde_json::json!({"title": "1"})) }];
+        let results = vec![CudResult { status: CudStatus::Skipped, message: "Record does not exist".to_string(), item: Some(CudParams { title: Some("1".to_string()), ..Default::default() }) }];
 
         let res = handle_cud_logic(results, OptionMode::UpdateFeed);
         // Update with no errors and all skipped should be OK (200)

@@ -16,12 +16,15 @@ pub async fn extract_feed(
     params: &ExtractParams,
 ) -> Result<Vec<NewsFeedRow>, ServiceError> {
     match &state.db {
+        #[cfg(feature = "postgres")]
         DbPool::Postgres(pool) => newsfeed_db::postgres::extract_feed(pool, params)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mariadb")]
         DbPool::MariaDb(pool) => newsfeed_db::mariadb::extract_feed(pool, params)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mssql")]
         DbPool::MsSql(pool) => newsfeed_db::mssql::extract_feed(pool, params)
             .await
             .map_err(ServiceError::Database),
@@ -40,12 +43,15 @@ pub async fn cud_feed(
     params: &[CudParams],
 ) -> Result<Vec<newsfeed_db::CudResult>, ServiceError> {
     match &state.db {
+        #[cfg(feature = "postgres")]
         DbPool::Postgres(pool) => newsfeed_db::postgres::cud_feed(pool, option_mode, params)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mariadb")]
         DbPool::MariaDb(pool) => newsfeed_db::mariadb::cud_feed(pool, option_mode, params)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mssql")]
         DbPool::MsSql(pool) => newsfeed_db::mssql::cud_feed(pool, option_mode, params)
             .await
             .map_err(ServiceError::Database),
@@ -57,12 +63,15 @@ pub async fn cud_feed(
 /// Retrieve a max timestamp for `ETag` generation.
 pub async fn max_modified_date(state: &Arc<AppState>) -> Result<Option<String>, ServiceError> {
     match &state.db {
+        #[cfg(feature = "postgres")]
         DbPool::Postgres(pool) => newsfeed_db::postgres::max_modified_date(pool)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mariadb")]
         DbPool::MariaDb(pool) => newsfeed_db::mariadb::max_modified_date(pool)
             .await
             .map_err(ServiceError::Database),
+        #[cfg(feature = "mssql")]
         DbPool::MsSql(pool) => newsfeed_db::mssql::max_modified_date(pool)
             .await
             .map_err(ServiceError::Database),
@@ -77,6 +86,7 @@ mod tests {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
+    #[cfg(feature = "postgres")]
     fn make_postgres_state() -> Arc<AppState> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://fake:fake@localhost/fake")
@@ -88,6 +98,7 @@ mod tests {
         })
     }
 
+    #[cfg(feature = "mariadb")]
     fn make_mariadb_state() -> Arc<AppState> {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
             .connect_lazy("mysql://fake:fake@localhost/fake")
@@ -99,6 +110,7 @@ mod tests {
         })
     }
 
+    #[cfg(feature = "mssql")]
     async fn make_mssql_state() -> Arc<AppState> {
         // bb8 with tiberius validates the config eagerly but doesn't open a TCP
         // connection until the first `pool.get()`.  We configure it to point at
@@ -145,6 +157,7 @@ mod tests {
 
     // ── extract_feed dispatch arms ─────────────────────────────────────────────
 
+    #[cfg(feature = "postgres")]
     #[tokio::test]
     async fn test_extract_feed_postgres_dispatches_and_errors() {
         let state = make_postgres_state();
@@ -153,6 +166,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
 
+    #[cfg(feature = "mariadb")]
     #[tokio::test]
     async fn test_extract_feed_mariadb_dispatches_and_errors() {
         let state = make_mariadb_state();
@@ -161,6 +175,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
 
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_extract_feed_mssql_dispatches_and_errors() {
         let state = make_mssql_state().await;
@@ -171,6 +186,7 @@ mod tests {
 
     // ── cud_feed dispatch arms ─────────────────────────────────────────────────
 
+    #[cfg(feature = "postgres")]
     #[tokio::test]
     async fn test_cud_feed_postgres_dispatches_and_errors() {
         let state = make_postgres_state();
@@ -179,6 +195,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
 
+    #[cfg(feature = "mariadb")]
     #[tokio::test]
     async fn test_cud_feed_mariadb_dispatches_and_errors() {
         let state = make_mariadb_state();
@@ -187,6 +204,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServiceError::Database(_)));
     }
 
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_cud_feed_mssql_dispatches_and_errors() {
         let state = make_mssql_state().await;
@@ -214,6 +232,7 @@ mod tests {
         assert!(matches!(res[0].status, newsfeed_db::CudStatus::Error));
     }
 
+    #[cfg(feature = "postgres")]
     #[tokio::test]
     async fn test_max_modified_date_postgres() {
         let state = make_postgres_state();
@@ -221,6 +240,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "mariadb")]
     #[tokio::test]
     async fn test_max_modified_date_mariadb() {
         let state = make_mariadb_state();
@@ -228,6 +248,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "mssql")]
     #[tokio::test]
     async fn test_max_modified_date_mssql() {
         let state = make_mssql_state().await;

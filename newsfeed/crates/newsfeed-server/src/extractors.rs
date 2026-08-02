@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use newsfeed_constants::http::{ResponseCode, ResponseMessage};
-use newsfeed_models::ApiResponse;
+use newsfeed_models::ApiErrorResponse;
 
 /// A custom JSON extractor that wraps axum's `Json` extractor.
 /// It catches `JsonRejection`s and converts them into our standard `ApiResponse` JSON.
@@ -35,10 +35,8 @@ where
                 };
                 let raw_text = rejection.body_text();
                 tracing::warn!(rejection_text = %raw_text, "JSON extraction failed");
-                let payload = ApiResponse::<serde_json::Value>::error_with_code(
-                    code,
-                    ResponseMessage::FAILED_TO_READ_BODY,
-                );
+                let payload =
+                    ApiErrorResponse::<()>::with_code(code, ResponseMessage::FAILED_TO_READ_BODY);
                 Err((status, Json(payload)).into_response())
             }
         }

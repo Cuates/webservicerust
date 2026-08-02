@@ -48,7 +48,7 @@ fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> axum::response:
     };
     tracing::error!("Service panicked: {details}");
 
-    let payload = newsfeed_models::ApiResponse::<serde_json::Value>::error_with_code(
+    let payload = newsfeed_models::ApiErrorResponse::<newsfeed_models::EmptyPayload>::with_code(
         ResponseCode::INTERNAL_ERROR,
         "Internal Server Error",
     );
@@ -78,7 +78,7 @@ pub fn build(state: Arc<AppState>, cfg: &AppConfig) -> Router {
         "Rate limiting enabled (tower_governor, per-IP token bucket)"
     );
     let governor_layer = tower_governor::GovernorLayer::new(governor_config).error_handler(|_e| {
-        let payload = newsfeed_models::ApiResponse::<serde_json::Value>::error_with_code(
+        let payload = newsfeed_models::ApiErrorResponse::<newsfeed_models::EmptyPayload>::with_code(
             ResponseCode::RATE_LIMIT_EXCEEDED,
             ResponseMessage::TOO_MANY_REQUESTS_RETRY,
         );

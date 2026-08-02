@@ -43,4 +43,4 @@ graph TD
 - **Error Standardization**: Malformed payloads -> `AppJson` Extractor -> Structured JSON mapped to unified constants (e.g. `Code: "BAD_REQUEST"`).
 - **Dependency Hygiene**: Strict auditing via `cargo-machete` prevents unused crates across the workspace.
 - **Build System**: `cargo-make` (`Makefile.toml`) powers all cross-platform builds and checks.
-- **Continuous Integration**: GitHub Actions workflows execute `cargo make test-coverage` to strictly enforce minimum >99% line and function code coverage thresholds, and a separate `newsfeed-release.yml` pipeline automates cross-platform builds and artifact bundling on version tags.
+- **Continuous Integration**: GitHub Actions workflows execute a strict pre-commit hygiene pipeline (`cargo make check`, `machete`, `fix`, `audit`, `test-coverage`, `lint-docs`) with strict test matrix isolation across engines (`--no-default-features --features <engine>`) and >99% code coverage thresholds. A separate `newsfeed-release.yml` pipeline automates cross-platform builds and artifact bundling on version tags.

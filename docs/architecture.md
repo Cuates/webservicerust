@@ -42,6 +42,7 @@ webservicerust
 |   |   cargo-make.md
 |   |   scaffolding.md
 |   |   troubleshooting.md
+|   |   openapi.json
 |   |   
 |   \---adr/
 |           0001-rust-monorepo-migration.md
@@ -164,5 +165,5 @@ webservicerust
 - The workspace enforces a strict pre-commit hygiene pipeline locally via `cargo make` (compilation `check`, `check-deadcode`, unused dependency `machete` audits, `fix`, security `audit`, strict >99% `test-coverage`, and `lint-docs`) and mirrors this pipeline in CI (`.github/workflows/newsfeed-ci.yml`).
 - Core logic and payload validation are tested via standard `#[test]` unit tests inside the library crates.
 - API routing and middleware are verified via in-memory server testing in `newsfeed-server/tests/integration_test.rs`.
-- Integration tests dynamically provision fully isolated, ephemeral databases on random ports using the `testcontainers` crate, automatically executing a robust test matrix across PostgreSQL, MariaDB, and MSSQL. Manual test databases are available in `docker-compose.test.yml`. Live database instances can also be tested by bypassing containers via `TEST_*_URL` environment variables.
+- Integration tests dynamically provision fully isolated, ephemeral databases on random ports using the `testcontainers` crate, automatically executing a robust test matrix across PostgreSQL, MariaDB, and MSSQL. In CI, linting strictly enforces `--all-features`, while the test matrix leverages `--no-default-features --features <engine>` to ensure strict feature isolation. Manual test databases are available in `docker-compose.test.yml`. Live database instances can also be tested by bypassing containers via `TEST_*_URL` environment variables.
 - Dependency trees are strictly audited in CI via `cargo-machete` to prevent dependency bloat and enforce zero unused crates across the workspace.

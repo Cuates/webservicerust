@@ -2,7 +2,7 @@
 
 use crate::error::DbError;
 use newsfeed_models::NewsFeedRow;
-use serde::{Deserialize, Serialize};
+
 use serde_json::Value;
 
 /// Shared helper to construct a `NewsFeedRow` from mapped Option<String> columns
@@ -23,25 +23,7 @@ pub fn row_to_news_feed_row(
     }
 }
 
-/// Status of a CUD operation returned by the database.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum CudStatus {
-    Success,
-    Skipped,
-    Error,
-}
-
-/// Result of a CUD operation for a single item in a batch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct CudResult {
-    pub status: CudStatus,
-    #[serde(default)]
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<Value>,
-}
+pub use newsfeed_models::{CudResult, CudStatus};
 
 /// Parse the status column rows returned by stored procedures.
 ///
@@ -149,17 +131,17 @@ mod tests {
     #[test]
     fn test_parse_status_rows_with_item() {
         let rows = vec![(Some(
-            r#"{"Status":"Error","Message":"Invalid date","Item":{"title":"foo","publish_date":"invalid"}}"#.to_string(),
+            r#"{"Status":"Error","Message":"Invalid date","Item":{"title":"foo","publish_date":"2026-08-01T12:00:00Z"}}"#.to_string(),
         ),)];
         let res = parse_status_rows(rows).unwrap();
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].status, CudStatus::Error);
         assert_eq!(res[0].message, "Invalid date");
         let item = res[0].item.as_ref().expect("item should be present");
-        assert_eq!(item.get("title").unwrap().as_str().unwrap(), "foo");
+        assert_eq!(item.title.as_deref().unwrap(), "foo");
         assert_eq!(
-            item.get("publish_date").unwrap().as_str().unwrap(),
-            "invalid"
+            item.publish_date.as_deref().unwrap(),
+            "2026-08-01T12:00:00Z"
         );
     }
 }

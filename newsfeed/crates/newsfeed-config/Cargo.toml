@@ -8,6 +8,7 @@ newsfeed-constants = { path = "../newsfeed-constants" }
 serde              = { workspace = true }
 envy.workspace     = true
 ipnet.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

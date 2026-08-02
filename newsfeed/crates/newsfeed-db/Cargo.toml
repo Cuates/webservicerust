@@ -8,14 +8,13 @@ newsfeed-constants = { path = "../newsfeed-constants" }
 newsfeed-config    = { path = "../newsfeed-config" }
 newsfeed-models    = { path = "../newsfeed-models" }
 
-sqlx         = { workspace = true }
-tiberius     = { workspace = true }
-tokio-util   = { workspace = true }
+sqlx         = { workspace = true, optional = true }
+tiberius     = { workspace = true, optional = true }
+tokio-util   = { workspace = true, optional = true }
 tokio        = { workspace = true }
-bb8          = { workspace = true }
-bb8-tiberius = { workspace = true }
+bb8          = { workspace = true, optional = true }
+bb8-tiberius = { workspace = true, optional = true }
 serde_json   = { workspace = true }
-serde        = { workspace = true }
 thiserror    = { workspace = true }
 tracing      = { workspace = true }
 hex          = { workspace = true }
@@ -28,3 +27,8 @@ tracing-subscriber.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["postgres", "mariadb", "mssql"]
+postgres = ["dep:sqlx"]
+mariadb = ["dep:sqlx"]
+mssql = ["dep:tiberius", "dep:tokio-util", "dep:bb8", "dep:bb8-tiberius"]

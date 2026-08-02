@@ -1,4 +1,7 @@
-use newsfeed_models::{ApiResponse, CudParams, ExtractParams, NewsFeedRow};
+use newsfeed_models::{
+    ApiErrorResponse, ApiResponse, CudParams, CudResult, CudStatus, EmptyPayload, ExtractParams,
+    NewsFeedRow,
+};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -12,7 +15,10 @@ use utoipa::OpenApi;
         crate::handlers::cud::delete_handler
     ),
     components(
-        schemas(ExtractParams, CudParams, NewsFeedRow, ApiResponse<serde_json::Value>)
+        schemas(
+            ExtractParams, CudParams, NewsFeedRow, CudResult, CudStatus, EmptyPayload,
+            ApiResponse<NewsFeedRow>, ApiResponse<CudResult, CudParams>, ApiErrorResponse<EmptyPayload>
+        )
     ),
     tags(
         (name = "newsfeed", description = "Newsfeed Management API")

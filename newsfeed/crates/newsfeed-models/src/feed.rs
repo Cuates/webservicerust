@@ -204,6 +204,26 @@ pub struct NewsFeedRow {
     pub publishdatereturn: Option<String>,
 }
 
+/// Status of a CUD operation returned by the database.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum CudStatus {
+    Success,
+    Skipped,
+    Error,
+}
+
+/// Result of a CUD operation for a single item in a batch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "PascalCase")]
+pub struct CudResult {
+    pub status: CudStatus,
+    #[serde(default)]
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item: Option<CudParams>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

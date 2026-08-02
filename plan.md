@@ -22,6 +22,7 @@ The initial rewrite from Python FastAPI to Rust Axum is 100% complete and stable
 13. **Release 4.1.0 & Architectural Hardening**: Decoupled HTTP payload validation into `validation.rs`, enforced whitespace rejection via `deserialize_non_empty_option`, implemented unified cross-engine bulk JSON insertion (`cud_bulk_json_newsfeed`), mapped DB conflict-writes to `Skipped` status, and bumped workspace version to `4.1.0`.
 14. **Release 4.2.0**: Enforced a strict workspace pre-commit hygiene pipeline (`cargo make check`, `machete`, `test-coverage`) and bumped workspace package version to `4.2.0`.
 15. **Release 4.3.0**: Synchronized codebase for strict RFC3339 date handling across integration tests and lowered coverage reporting threshold, bumping workspace package version to `4.3.0`.
+16. **Release 4.4.0**: Pre-commit hygiene validation pipeline execution and bumping workspace package version to `4.4.0`.
 
 ### Next Up (Future Planning)
 

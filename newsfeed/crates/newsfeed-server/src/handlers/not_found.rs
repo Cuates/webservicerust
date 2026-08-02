@@ -5,14 +5,12 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use newsfeed_constants::http::ResponseMessage;
-use newsfeed_models::ApiResponse;
+use newsfeed_models::ApiErrorResponse;
 
 pub async fn handler() -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
-        Json(ApiResponse::<serde_json::Value>::error(
-            ResponseMessage::NOT_FOUND,
-        )),
+        Json(ApiErrorResponse::<()>::new(ResponseMessage::NOT_FOUND)),
     )
         .into_response()
 }

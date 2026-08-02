@@ -72,7 +72,7 @@ pub async fn cud_feed(
     let mut conn = pool
         .get()
         .await
-        .map_err(|e| DbError::MssqlPool(e.to_string()))?;
+        .map_err(|e| DbError::MssqlPool(format!("{e:?}")))?;
     let payload = serde_json::to_string(params).map_err(DbError::Json)?;
 
     let mut query = tiberius::Query::new("EXEC cud_bulk_json_newsfeed @P1, @P2");

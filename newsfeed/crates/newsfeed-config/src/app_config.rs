@@ -57,11 +57,11 @@ pub struct AppConfig {
 }
 
 fn default_timeout_standard() -> u64 {
-    10
+    newsfeed_constants::http::Timeouts::STANDARD_SECS
 }
 
 fn default_timeout_cud() -> u64 {
-    60
+    newsfeed_constants::http::Timeouts::CUD_SECS
 }
 
 fn default_false() -> bool {

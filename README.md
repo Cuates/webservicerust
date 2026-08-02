@@ -55,6 +55,7 @@ The service and CI pipelines are built to be completely cross-platform across Li
    - `cargo make machete` — Audit workspace dependency tree for unused crates.
    - `cargo make test` — Run all unit and integration tests across the workspace.
    - `cargo make test-coverage` — Verify >99% line and function test coverage.
+   - `cargo make lint-docs` — Validate and lint all project markdown documentation.
 5. Run locally via Docker: `docker compose up --build` to start the application on port `4815`.
 
 ## Documentation

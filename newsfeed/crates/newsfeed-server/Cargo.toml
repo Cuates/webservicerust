@@ -29,6 +29,7 @@ utoipa         = { workspace = true }
 sha2           = { workspace = true }
 subtle         = { workspace = true }
 ipnet.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 axum-test      = "21.0.0"
@@ -43,3 +44,9 @@ bb8-tiberius   = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+default = ["postgres", "mariadb", "mssql"]
+postgres = ["newsfeed-service/postgres", "newsfeed-db/postgres"]
+mariadb = ["newsfeed-service/mariadb", "newsfeed-db/mariadb"]
+mssql = ["newsfeed-service/mssql", "newsfeed-db/mssql"]

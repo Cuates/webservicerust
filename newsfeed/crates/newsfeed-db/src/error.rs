@@ -4,15 +4,19 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DbError {
+    #[cfg(any(feature = "postgres", feature = "mariadb"))]
     #[error("sqlx error: {0}")]
     Sqlx(#[from] sqlx::Error),
 
+    #[cfg(feature = "mssql")]
     #[error("tiberius error: {0}")]
     Tiberius(#[from] tiberius::error::Error),
 
+    #[cfg(feature = "mssql")]
     #[error("tiberius TCP error: {0}")]
     TiberiusTcp(#[from] std::io::Error),
 
+    #[cfg(feature = "mssql")]
     #[error("MSSQL pool error: {0}")]
     MssqlPool(String),
 
@@ -29,6 +33,7 @@ pub enum DbError {
     ProcedureFailed(String),
 }
 
+#[cfg(feature = "mssql")]
 impl<E: std::fmt::Debug> From<bb8::RunError<E>> for DbError {
     fn from(e: bb8::RunError<E>) -> Self {
         Self::MssqlPool(format!("{e:?}"))
@@ -53,10 +58,14 @@ mod tests {
         let err = DbError::ProcedureFailed("bad params".into());
         assert_eq!(err.to_string(), "Stored procedure failed: bad params");
 
-        let err = DbError::MssqlPool("timeout".into());
-        assert_eq!(err.to_string(), "MSSQL pool error: timeout");
+        #[cfg(feature = "mssql")]
+        {
+            let err = DbError::MssqlPool("timeout".into());
+            assert_eq!(err.to_string(), "MSSQL pool error: timeout");
+        }
     }
 
+    #[cfg(feature = "mssql")]
     #[test]
     fn test_db_error_from_io() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
